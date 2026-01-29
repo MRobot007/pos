@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #09090B;
+  --card: rgba(255, 255, 255, 0.9);
+  --card-border: rgba(107, 33, 168, 0.1);
+  --primary: #6B21A8;
+  --primary-glow: rgba(107, 33, 168, 0.15);
+  --accent: #A855F7;
+  --accent-glow: rgba(168, 85, 247, 0.1);
+  --dark: #09090B;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-[#09090B] antialiased;
+    background-image:
+      radial-gradient(at 0% 0%, rgba(107, 33, 168, 0.03) 0, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.02) 0, transparent 50%);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply backdrop-blur-xl bg-white border border-purple-100 shadow-2xl shadow-purple-900/[0.03];
+  }
+
+  .premium-button {
+    @apply relative overflow-hidden transition-all duration-300 active:scale-95 px-6 py-2.5 rounded-xl font-medium;
+    background: linear-gradient(135deg, #6B21A8 0%, #4C1D95 100%);
+    box-shadow: 0 4px 15px -1px var(--primary-glow);
+    color: white;
+  }
+
+  .premium-button:hover {
+    @apply translate-y-[-2px] shadow-lg shadow-purple-500/20;
+    background: linear-gradient(135deg, #7E22CE 0%, #5B21B6 100%);
+  }
+
+  .input-field {
+    @apply bg-purple-50/30 border border-purple-100 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500/10 focus:border-purple-500/20 outline-none transition-all duration-300 text-[#09090B] placeholder:text-purple-700;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-purple-400 hover:text-purple-700 hover:bg-purple-50;
+  }
+
+  .add-to-cart-animation {
+    @apply transition-transform duration-300 ease-in-out;
+    animation: addToCart 0.3s ease-in-out;
+  }
+
+  @keyframes addToCart {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+  }
+
+  .sidebar-link.active {
+    @apply bg-purple-600 text-white border border-purple-700 shadow-lg shadow-purple-600/20;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(107, 33, 168, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 33, 168, 0.2);
+}
+
+/* Entry Animations */
+.animate-entry {
+  animation: entryFade 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes entryFade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: entryFade 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

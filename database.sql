@@ -1,0 +1,215 @@
+-- Spirited Wines POS database
+CREATE DATABASE IF NOT EXISTS `pos_project` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `pos_project`;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(150) NOT NULL UNIQUE,
+  phone VARCHAR(30) NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('OWNER','MANAGER','CASHIER') NOT NULL DEFAULT 'CASHIER',
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX(user_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  category_id INT,
+  name VARCHAR(200) NOT NULL,
+  sku VARCHAR(100) NOT NULL,
+  barcode VARCHAR(120),
+  brand VARCHAR(120),
+  is_alcohol TINYINT(1) DEFAULT 0,
+  mrp DECIMAL(10,2) DEFAULT 0,
+  bottle_size VARCHAR(50) DEFAULT '750ml',
+  cost_price DECIMAL(10,2) DEFAULT 0,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0,
+  stock INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX(category_id),
+  UNIQUE KEY uniq_sku (sku),
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS registers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  opening_cash DECIMAL(10,2) NOT NULL DEFAULT 0,
+  current_cash DECIMAL(10,2) NOT NULL DEFAULT 0,
+  status ENUM('OPEN','CLOSED') NOT NULL DEFAULT 'OPEN',
+  opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  closed_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS sales (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  register_id INT,
+  subtotal DECIMAL(10,2) NOT NULL,
+  tax DECIMAL(10,2) NOT NULL,
+  total DECIMAL(10,2) NOT NULL,
+  payment_method ENUM('cash','card','split') NOT NULL,
+  age_verified TINYINT(1) DEFAULT 0,
+  receipt_number VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (register_id) REFERENCES registers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS sale_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sale_id INT NOT NULL,
+  product_id INT NOT NULL,
+  quantity INT NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  subtotal DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  contact_name VARCHAR(120),
+  phone VARCHAR(30),
+  email VARCHAR(150),
+  address TEXT,
+  terms TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  supplier_id INT NOT NULL,
+  status ENUM('DRAFT','ORDERED','RECEIVED','CANCELLED') DEFAULT 'DRAFT',
+  ordered_at DATETIME,
+  received_at DATETIME,
+  created_by INT,
+  notes TEXT,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  purchase_order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  ordered_qty INT NOT NULL,
+  received_qty INT DEFAULT 0,
+  cost_price DECIMAL(10,2) NOT NULL,
+  FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS promotions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  discount_type ENUM('PERCENT','AMOUNT') NOT NULL,
+  discount_value DECIMAL(10,2) NOT NULL,
+  start_at DATETIME,
+  end_at DATETIME,
+  category_id INT,
+  active TINYINT(1) DEFAULT 1,
+  FOREIGN KEY (category_id) REFERENCES categories(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS customer_profiles (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  phone VARCHAR(20) UNIQUE,
+  loyalty_points INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS customer_purchases (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id INT NOT NULL,
+  sale_id INT NOT NULL,
+  FOREIGN KEY (customer_id) REFERENCES customer_profiles(id),
+  FOREIGN KEY (sale_id) REFERENCES sales(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payment_records (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sale_id INT NOT NULL,
+  method ENUM('CASH','CARD','UPI','WALLET') NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  reference VARCHAR(150),
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS receipts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sale_id INT NOT NULL,
+  email VARCHAR(150),
+  phone VARCHAR(20),
+  gift_receipt TINYINT(1) DEFAULT 0,
+  receipt_url VARCHAR(255),
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS refunds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sale_id INT NOT NULL,
+  processed_by INT NOT NULL,
+  approved_by INT,
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sale_id) REFERENCES sales(id),
+  FOREIGN KEY (processed_by) REFERENCES users(id),
+  FOREIGN KEY (approved_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS refund_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  refund_id INT NOT NULL,
+  sale_item_id INT NOT NULL,
+  quantity INT NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  restocked TINYINT(1) DEFAULT 0,
+  FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
+  FOREIGN KEY (sale_item_id) REFERENCES sale_items(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  action VARCHAR(150) NOT NULL,
+  details JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS held_bills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS held_bill_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  bill_id INT NOT NULL,
+  product_id INT NOT NULL,
+  quantity INT NOT NULL,
+  FOREIGN KEY (bill_id) REFERENCES held_bills(id) ON DELETE CASCADE,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO users (name, email, password_hash, role) VALUES
+  ('Owner', 'owner@spiritedwines.com', '$2y$10$Qb4SPdmBd0RMTrl1pbQm.u9C0m05C8aa/UabMJcMgPrt0h8G7biSm', 'OWNER'),
+  ('Manager', 'manager@spiritedwines.com', '$2y$10$Qb4SPdmBd0RMTrl1pbQm.u9C0m05C8aa/UabMJcMgPrt0h8G7biSm', 'MANAGER')
+ON DUPLICATE KEY UPDATE email = email;
+-- password for both: admin123

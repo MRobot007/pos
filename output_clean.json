@@ -1,0 +1,20 @@
+{
+    "summary": [
+        {
+            "low_stock_threshold": 10,
+            "count": 13958
+        }
+    ],
+    "examples_low_stock": [
+        {
+            "name": "Girolamo Russo 'a Rina Etna Rosso",
+            "stock": 0,
+            "low_stock_threshold": 10
+        },
+        {
+            "name": "Domaine Sylvain Cathiard Nuits-Saint-Georges",
+            "stock": 0,
+            "low_stock_threshold": 10
+        }
+    ]
+}
