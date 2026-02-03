@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 import { API_URL } from '@/lib/api-config'
 import Link from 'next/link'
 import CashierSidebar from '@/components/CashierSidebar'
+import CardReaderIndicator from '@/components/CardReaderIndicator'
 
 // --- Memoized Components for Performance ---
 
@@ -148,6 +149,8 @@ export default function POSPage() {
     const [openingFloat, setOpeningFloat] = useState<string>('')
     const [isOpeningCashSet, setIsOpeningCashSet] = useState(true)
     const [bannerDismissed, setBannerDismissed] = useState(false)
+    const [isCardReaderConnected, setIsCardReaderConnected] = useState(false)
+    const [cardReaderStatus, setCardReaderStatus] = useState<'idle' | 'waiting' | 'processing' | 'success'>('idle')
 
     const router = useRouter()
     const apiUrl = API_URL
@@ -675,6 +678,16 @@ export default function POSPage() {
             }
         }
 
+        if (paymentMethod === 'card' && isCardReaderConnected) {
+            setCardReaderStatus('waiting')
+            // Simulate waiting for hardware interaction
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            setCardReaderStatus('processing')
+            await new Promise(resolve => setTimeout(resolve, 1500))
+            setCardReaderStatus('success')
+            await new Promise(resolve => setTimeout(resolve, 500))
+        }
+
         setCheckoutLoading(true)
         if (!apiUrl) throw new Error('API URL not defined')
         const token = localStorage.getItem('token')
@@ -735,6 +748,7 @@ export default function POSPage() {
                 setCustomerSearch('')
                 setCashReceived('')
                 setSplitPayments({ cash: 0, card: 0 })
+                setCardReaderStatus('idle')
                 alert(`Order completed successfully!\nReceipt: ${data.receiptNumber}`)
                 fetchProducts()
                 fetchCustomers()
@@ -1307,18 +1321,169 @@ export default function POSPage() {
                                     >
                                         Max Out
                                     </button>
-                                    {pointsToRedeem > 0 && (
-                                        <span className="text-[10px] font-black text-green-600 ml-auto uppercase bg-green-50 px-2 py-1 rounded-lg border border-green-100">
-                                            -${loyaltyDiscount.toFixed(2)} Off
-                                        </span>
-                                    )}
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Cart Items Area */}
+                <div className="px-8 pb-4">
+                    <CardReaderIndicator onConnectionChange={setIsCardReaderConnected} />
+                </div>
+
+                <div className="px-8 pb-4 space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                        {(['cash', 'card', 'split'] as const).map((m) => (
+                            <button
+                                key={m}
+                                onClick={() => {
+                                    setPaymentMethod(m)
+                                    if (m === 'cash') setCashReceived(total.toFixed(2))
+                                    if (m === 'split') {
+                                        const half = total / 2
+                                        setSplitPayments({ cash: half, card: half })
+                                    }
+                                }}
+                                className={cn(
+                                    "py-3 rounded-2xl border text-[9px] font-black uppercase tracking-tight transition-all flex items-center justify-center gap-1",
+                                    paymentMethod === m
+                                        ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
+                                        : "bg-white border-purple-100 text-purple-600 hover:bg-purple-100"
+                                )}
+                            >
+                                {m === 'cash' ? <Banknote size={12} /> :
+                                    m === 'card' ? <CreditCard size={12} /> :
+                                        <Split size={12} />}
+                                <span className="truncate">{m}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {paymentMethod === 'cash' && (
+                        <div className="bg-green-50 border border-green-100 rounded-[28px] p-6 space-y-4 shadow-sm">
+                            <div className="flex justify-between items-end">
+                                <div className="space-y-1">
+                                    <p className="text-[8px] font-black text-green-700 uppercase tracking-widest">Cash Received</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl font-bold text-green-700">$</span>
+                                        <input
+                                            type="number"
+                                            value={cashReceived}
+                                            onChange={(e) => setCashReceived(e.target.value)}
+                                            className="bg-transparent border-none outline-none text-2xl font-black text-green-700 w-24"
+                                            autoFocus
+                                        />
+                                    </div>
+                                </div>
+                                <div className="text-right space-y-1">
+                                    <p className="text-[8px] font-black text-green-700 uppercase tracking-widest">Change Due</p>
+                                    <p className="text-2xl font-black text-green-700">
+                                        ${Math.max(0, (parseFloat(cashReceived) || 0) - total).toFixed(2)}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[10, 20, 50, 100].map(amt => (
+                                    <button
+                                        key={amt}
+                                        onClick={() => setCashReceived(((parseFloat(cashReceived) || 0) + amt).toString())}
+                                        className="py-2 rounded-xl bg-white border border-green-200 text-[9px] font-black text-green-700 uppercase hover:bg-green-100 transition-colors shadow-sm"
+                                    >
+                                        +${amt}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {paymentMethod === 'split' && (
+                        <div className="bg-purple-50 border-2 border-primary/20 rounded-[28px] p-5 space-y-4 shadow-xl relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-2xl" />
+
+                            <div className="flex justify-between items-center relative z-10">
+                                <div>
+                                    <p className="text-[8px] font-black text-primary uppercase tracking-widest mb-1">Split Allocation</p>
+                                    <p className="text-xl font-black text-dark font-outfit tracking-tighter">Total: ${total.toFixed(2)}</p>
+                                </div>
+                                <div className={cn(
+                                    "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2",
+                                    Math.abs(splitPayments.cash + splitPayments.card - total) < 0.01
+                                        ? "bg-green-100 text-green-700"
+                                        : "bg-amber-100 text-amber-700 animate-pulse"
+                                )}>
+                                    {Math.abs(splitPayments.cash + splitPayments.card - total) < 0.01
+                                        ? <><CheckCircle2 size={12} /> Balanced</>
+                                        : <><Loader2 size={12} className="animate-spin" /> Unbalanced</>}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 relative z-10">
+                                <div className="bg-white p-3 rounded-2xl border-2 border-purple-100 focus-within:border-primary transition-all">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Banknote size={12} className="text-primary" />
+                                        <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Cash Part</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-sm font-bold text-primary">$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={splitPayments.cash || ''}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0
+                                                const validCash = Math.max(0, Math.min(total, val))
+                                                setSplitPayments({
+                                                    cash: validCash,
+                                                    card: Math.max(0, total - validCash)
+                                                })
+                                            }}
+                                            onBlur={() => {
+                                                setSplitPayments(prev => ({
+                                                    ...prev,
+                                                    cash: Math.round(prev.cash * 100) / 100,
+                                                    card: Math.round(prev.card * 100) / 100
+                                                }))
+                                            }}
+                                            className="bg-transparent border-none outline-none text-lg font-black text-primary w-full p-0"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-3 rounded-2xl border-2 border-purple-100 focus-within:border-primary transition-all">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <CreditCard size={12} className="text-primary" />
+                                        <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Card Part</p>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-sm font-bold text-primary">$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={splitPayments.card || ''}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0
+                                                const validCard = Math.max(0, Math.min(total, val))
+                                                setSplitPayments({
+                                                    cash: Math.max(0, total - validCard),
+                                                    card: validCard
+                                                })
+                                            }}
+                                            onBlur={() => {
+                                                setSplitPayments(prev => ({
+                                                    ...prev,
+                                                    cash: Math.round(prev.cash * 100) / 100,
+                                                    card: Math.round(prev.card * 100) / 100
+                                                }))
+                                            }}
+                                            className="bg-transparent border-none outline-none text-lg font-black text-primary w-full p-0"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex-1 overflow-y-auto px-8 custom-scrollbar space-y-4 mt-2">
                     {cart.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center opacity-40 py-20 text-purple-600">
@@ -1368,8 +1533,7 @@ export default function POSPage() {
                     )}
                 </div>
 
-                {/* Checkout Footer */}
-                <div className="p-8 bg-purple-50/30 border-t border-purple-50 space-y-6 overflow-y-auto max-h-[600px] custom-scrollbar">
+                <div className="p-8 bg-purple-50/30 border-t border-purple-50 space-y-6">
                     <div className="space-y-3">
                         <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
                             <span className="text-purple-600">Subtotal</span>
@@ -1391,175 +1555,38 @@ export default function POSPage() {
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-2">
-                            {(['cash', 'card', 'split'] as const).map((m) => (
-                                <button
-                                    key={m}
-                                    onClick={() => {
-                                        setPaymentMethod(m)
-                                        if (m === 'cash') setCashReceived(total.toFixed(2))
-                                        if (m === 'split') {
-                                            const half = total / 2
-                                            setSplitPayments({ cash: half, card: half })
-                                        }
-                                    }}
-                                    className={cn(
-                                        "py-3 rounded-2xl border text-[9px] font-black uppercase tracking-tight transition-all flex items-center justify-center gap-1",
-                                        paymentMethod === m
-                                            ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
-                                            : "bg-white border-purple-100 text-purple-600 hover:bg-purple-100"
-                                    )}
-                                >
-                                    {m === 'cash' ? <Banknote size={12} /> :
-                                        m === 'card' ? <CreditCard size={12} /> :
-                                            <Split size={12} />}
-                                    <span className="truncate">{m}</span>
-                                </button>
-                            ))}
-                        </div>
-
-                        {paymentMethod === 'cash' && (
-                            <div className="bg-green-50 border border-green-100 rounded-[28px] p-6 space-y-4 shadow-sm">
-                                <div className="flex justify-between items-end">
-                                    <div className="space-y-1">
-                                        <p className="text-[8px] font-black text-green-700 uppercase tracking-widest">Cash Received</p>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xl font-bold text-green-700">$</span>
-                                            <input
-                                                type="number"
-                                                value={cashReceived}
-                                                onChange={(e) => setCashReceived(e.target.value)}
-                                                className="bg-transparent border-none outline-none text-2xl font-black text-green-700 w-24"
-                                                autoFocus
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="text-right space-y-1">
-                                        <p className="text-[8px] font-black text-green-700 uppercase tracking-widest">Change Due</p>
-                                        <p className="text-2xl font-black text-green-700">
-                                            ${Math.max(0, (parseFloat(cashReceived) || 0) - total).toFixed(2)}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {[10, 20, 50, 100].map(amt => (
-                                        <button
-                                            key={amt}
-                                            onClick={() => setCashReceived(((parseFloat(cashReceived) || 0) + amt).toString())}
-                                            className="py-2 rounded-xl bg-white border border-green-200 text-[9px] font-black text-green-700 uppercase hover:bg-green-100 transition-colors shadow-sm"
-                                        >
-                                            +${amt}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {paymentMethod === 'split' && (
-                            <div className="bg-purple-50 border-2 border-primary/20 rounded-[28px] p-5 space-y-4 shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-2xl" />
-
-                                <div className="flex justify-between items-center relative z-10">
-                                    <div>
-                                        <p className="text-[8px] font-black text-primary uppercase tracking-widest mb-1">Split Allocation</p>
-                                        <p className="text-xl font-black text-dark font-outfit tracking-tighter">Total: ${total.toFixed(2)}</p>
-                                    </div>
-                                    <div className={cn(
-                                        "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2",
-                                        Math.abs(splitPayments.cash + splitPayments.card - total) < 0.01
-                                            ? "bg-green-100 text-green-700"
-                                            : "bg-amber-100 text-amber-700 animate-pulse"
-                                    )}>
-                                        {Math.abs(splitPayments.cash + splitPayments.card - total) < 0.01
-                                            ? <><CheckCircle2 size={12} /> Balanced</>
-                                            : <><Loader2 size={12} className="animate-spin" /> Unbalanced</>}
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3 relative z-10">
-                                    <div className="bg-white p-3 rounded-2xl border-2 border-purple-100 focus-within:border-primary transition-all">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <Banknote size={12} className="text-primary" />
-                                            <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Cash Part</p>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-sm font-bold text-primary">$</span>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={splitPayments.cash || ''}
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value) || 0
-                                                    const validCash = Math.max(0, Math.min(total, val))
-                                                    setSplitPayments({
-                                                        cash: validCash,
-                                                        card: Math.max(0, total - validCash)
-                                                    })
-                                                }}
-                                                onBlur={() => {
-                                                    setSplitPayments(prev => ({
-                                                        ...prev,
-                                                        cash: Math.round(prev.cash * 100) / 100,
-                                                        card: Math.round(prev.card * 100) / 100
-                                                    }))
-                                                }}
-                                                className="bg-transparent border-none outline-none text-lg font-black text-primary w-full p-0"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-3 rounded-2xl border-2 border-purple-100 focus-within:border-primary transition-all">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <CreditCard size={12} className="text-primary" />
-                                            <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest">Card Part</p>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-sm font-bold text-primary">$</span>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={splitPayments.card || ''}
-                                                onChange={(e) => {
-                                                    const val = parseFloat(e.target.value) || 0
-                                                    const validCard = Math.max(0, Math.min(total, val))
-                                                    setSplitPayments({
-                                                        cash: Math.max(0, total - validCard),
-                                                        card: validCard
-                                                    })
-                                                }}
-                                                onBlur={() => {
-                                                    setSplitPayments(prev => ({
-                                                        ...prev,
-                                                        cash: Math.round(prev.cash * 100) / 100,
-                                                        card: Math.round(prev.card * 100) / 100
-                                                    }))
-                                                }}
-                                                className="bg-transparent border-none outline-none text-lg font-black text-primary w-full p-0"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setShowHoldModal(true)}
-                                className="flex-1 py-4 rounded-3xl bg-amber-50 border border-amber-100 text-amber-600 font-bold hover:bg-amber-100 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2"
-                            >
-                                <History size={14} />
-                                Hold Bill
-                            </button>
-                            <button
-                                onClick={handleCompleteOrder}
-                                disabled={checkoutLoading || cart.length === 0}
-                                className="flex-[2] py-4 rounded-3xl bg-primary text-white font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                {checkoutLoading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                                {checkoutLoading ? 'Processing...' : 'Complete Payment'}
-                            </button>
-                        </div>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => setShowHoldModal(true)}
+                            className="flex-1 py-4 rounded-3xl bg-amber-50 border border-amber-100 text-amber-600 font-bold hover:bg-amber-100 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2"
+                        >
+                            <History size={14} />
+                            Hold Bill
+                        </button>
+                        <button
+                            onClick={handleCompleteOrder}
+                            disabled={checkoutLoading || cart.length === 0 || (paymentMethod === 'card' && isCardReaderConnected && cardReaderStatus !== 'idle')}
+                            className="flex-[2] py-4 rounded-3xl bg-primary text-white font-black shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            {checkoutLoading ? (
+                                <Loader2 className="animate-spin" size={18} />
+                            ) : cardReaderStatus === 'waiting' ? (
+                                <Loader2 className="animate-spin" size={18} />
+                            ) : cardReaderStatus === 'processing' ? (
+                                <Loader2 className="animate-spin" size={18} />
+                            ) : (
+                                <CheckCircle2 size={18} />
+                            )}
+                            {checkoutLoading
+                                ? 'Processing...'
+                                : cardReaderStatus === 'waiting'
+                                    ? 'Insert/Tap Card'
+                                    : cardReaderStatus === 'processing'
+                                        ? 'Authorizing'
+                                        : cardReaderStatus === 'success'
+                                            ? 'Approved!'
+                                            : 'Complete Payment'}
+                        </button>
                     </div>
                 </div>
             </aside>
