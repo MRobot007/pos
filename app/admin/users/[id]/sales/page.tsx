@@ -1,39 +1,53 @@
 'use client'
 
-import { useState } from 'react'
-import { History, ArrowUpRight, X, Loader2, Users, RotateCcw, AlertTriangle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useParams, useSearchParams, useRouter } from 'next/navigation'
+import { History, ArrowUpRight, X, Loader2, Users, RotateCcw, TrendingUp, ChevronLeft, DollarSign, ShoppingBag, Activity } from 'lucide-react'
 import { AdminResourceTemplate } from '@/components/AdminResourceTemplate'
 import { cn } from '@/lib/utils'
 import { API_URL } from '@/lib/api-config'
 
-interface SaleItem {
-    id: number
-    quantity: number
-    price: number
-    subtotal: number
-    product: {
-        id: number
-        name: string
-        sku: string
-    }
-}
+export default function UserSalesPage() {
+    const params = useParams()
+    const searchParams = useSearchParams()
+    const router = useRouter()
+    const userId = params.id
+    const userName = searchParams.get('name') || 'Team Member'
 
-interface Sale {
-    id: number
-    receipt_number: string
-    total: number
-    payment_method: string
-    created_at: string
-    items: SaleItem[]
-}
-
-export default function SalesPage() {
     const [selectedSale, setSelectedSale] = useState<any>(null)
     const [loadingDetail, setLoadingDetail] = useState(false)
     const [showDetailModal, setShowDetailModal] = useState(false)
     const [isRefunding, setIsRefunding] = useState(false)
+    const [stats, setStats] = useState<any>(null)
 
     const apiUrl = API_URL
+
+    const fetchStats = async () => {
+        if (!apiUrl) return
+        const token = localStorage.getItem('token')
+        if (!token) return
+        try {
+            const res = await fetch(`${apiUrl}/admin/stats?cashier_id=${userId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                cache: 'no-store'
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setStats(data)
+            }
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
+    useEffect(() => {
+        fetchStats()
+    }, [userId])
 
     const handleViewDetail = async (saleId: number) => {
         if (!apiUrl) throw new Error('API URL not defined')
@@ -111,19 +125,56 @@ export default function SalesPage() {
     const formatCurrency = (val: any) => `$${Number(val || 0).toFixed(2)}`
 
     return (
-        <div className="relative">
+        <div className="relative space-y-6">
+            {/* Operational Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-6 glass-card rounded-[32px] bg-white border-purple-50 shadow-lg relative overflow-hidden group">
+                    <div className="p-3 rounded-2xl bg-primary/10 text-primary w-fit mb-4 group-hover:scale-110 transition-transform">
+                        <DollarSign size={20} />
+                    </div>
+                    <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest mb-1">Gross Revenue Generated</p>
+                    <h4 className="text-2xl font-black text-dark font-outfit">{formatCurrency(stats?.totalRevenue)}</h4>
+                    <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-primary/5 rounded-full blur-2xl" />
+                </div>
+                <div className="p-6 glass-card rounded-[32px] bg-white border-purple-50 shadow-lg relative overflow-hidden group">
+                    <div className="p-3 rounded-2xl bg-accent/10 text-accent w-fit mb-4 group-hover:scale-110 transition-transform">
+                        <ShoppingBag size={20} />
+                    </div>
+                    <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest mb-1">Total Operations Executed</p>
+                    <h4 className="text-2xl font-black text-dark font-outfit">{stats?.totalSales || 0} Orders</h4>
+                    <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-accent/5 rounded-full blur-2xl" />
+                </div>
+                <div className="p-6 glass-card rounded-[32px] bg-white border-purple-50 shadow-lg relative overflow-hidden group">
+                    <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-600 w-fit mb-4 group-hover:scale-110 transition-transform">
+                        <Activity size={20} />
+                    </div>
+                    <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest mb-1">Activity Today</p>
+                    <h4 className="text-2xl font-black text-dark font-outfit">{stats?.todaySales || 0} Transactions</h4>
+                    <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl" />
+                </div>
+            </div>
+
             <AdminResourceTemplate
-                title="Transaction Journal"
-                description="Complete history of all sales and financial operations."
-                icon={History}
+                title={`${userName}'s Performance`}
+                description={`Operational sales history and ledger entries for ${userName}.`}
+                icon={TrendingUp}
                 resourceName="Sales"
-                apiPath="/admin/sales?limit=all"
+                apiPath={`/admin/sales?cashier_id=${userId}&limit=all`}
                 columns={[
                     { label: 'Receipt No.', key: 'receipt_number' },
                     { label: 'Gross Total', key: 'total', align: 'right' },
                     { label: 'Method', key: 'payment_method', align: 'center' },
                     { label: 'Date Time', key: 'created_at' }
                 ]}
+                headerActions={
+                    <button
+                        onClick={() => router.back()}
+                        className="px-5 py-3 rounded-2xl bg-white border border-purple-100 text-purple-600 font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-purple-50 transition-all flex items-center gap-2 mr-2"
+                    >
+                        <ChevronLeft size={16} />
+                        Back to Team
+                    </button>
+                }
                 renderActions={(item) => (
                     <button
                         onClick={(e) => {
@@ -177,25 +228,6 @@ export default function SalesPage() {
                                         <p className="text-sm font-bold text-primary uppercase tracking-tight">{selectedSale.payment_method}</p>
                                     </div>
                                 </div>
-
-                                {/* Customer Info */}
-                                {selectedSale.customer && (
-                                    <div className="p-5 rounded-3xl bg-primary/5 border border-primary/10 flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-xl bg-white border border-primary/20 flex items-center justify-center text-primary">
-                                                <Users size={18} />
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Patron Identity</p>
-                                                <p className="font-bold text-dark">{selectedSale.customer.name}</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[9px] font-black text-purple-400 uppercase tracking-widest">Loyalty Wallet</p>
-                                            <p className="text-sm font-black text-primary font-outfit">{selectedSale.customer.loyalty_points || 0} PTS</p>
-                                        </div>
-                                    </div>
-                                )}
 
                                 {/* Line Items */}
                                 <div className="space-y-3">
@@ -265,4 +297,3 @@ export default function SalesPage() {
         </div>
     )
 }
-

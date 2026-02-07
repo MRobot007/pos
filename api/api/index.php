@@ -936,7 +936,7 @@ if ($method === 'POST' && $path === '/api/sales') {
     $customerData = $data['customer'] ?? null;
     $loyaltyData = $data['loyalty'] ?? null;
     $discountTotal = (float)($data['discountTotal'] ?? 0);
-    $ageVerification = $data['ageVerification'] ?? null;
+    $ageVerification = $data['ageVerification'] ?? $data['age_verified'] ?? null;
     $receiptData = $data['receipt'] ?? null;
     $promotionRefs = is_array($data['promotions'] ?? null) ? $data['promotions'] : [];
 
@@ -986,7 +986,7 @@ if ($method === 'POST' && $path === '/api/sales') {
         $total = round(($subtotal + $tax) - $discountTotal, 2);
 
         if ($requiresAgeVerification) {
-            $ageFlag = !empty($data['ageVerified']) || !empty($ageVerification);
+            $ageFlag = !empty($data['ageVerified']) || !empty($data['age_verified']) || !empty($ageVerification);
             if (!$ageFlag) {
                 throw new Exception('Age verification required for alcohol items');
             }
@@ -1107,7 +1107,7 @@ if ($method === 'POST' && $path === '/api/sales') {
         }
 
         $receiptNumber = $data['receiptNumber'] ?? ('R' . time());
-        $ageVerified = $requiresAgeVerification ? 1 : (!empty($data['ageVerified']) ? 1 : 0);
+        $ageVerified = $requiresAgeVerification ? 1 : (!empty($data['ageVerified']) || !empty($data['age_verified']) ? 1 : 0);
 
         $stmt = $pdo->prepare('INSERT INTO sales (register_id, subtotal, tax, total, payment_method, age_verified, receipt_number) VALUES (?,?,?,?,?,?,?)');
         $stmt->execute([$registerId, $subtotal, $tax, $total, $primaryPaymentMethod, $ageVerified, $receiptNumber]);

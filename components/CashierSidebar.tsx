@@ -14,7 +14,11 @@ import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import { API_URL } from '@/lib/api-config'
 
-export default function CashierSidebar() {
+interface CashierSidebarProps {
+    className?: string
+}
+
+export default function CashierSidebar({ className }: CashierSidebarProps) {
     const pathname = usePathname()
     const router = useRouter()
     const [user, setUser] = useState<any>(null)
@@ -72,7 +76,7 @@ export default function CashierSidebar() {
     const historyHref = role === 'OWNER' || role === 'MANAGER' ? '/admin/sales' : '/cashier/history'
 
     return (
-        <nav className="w-24 border-r border-white/5 flex flex-col items-center py-8 gap-8 bg-[#09090B] shadow-2xl relative z-30 shrink-0 h-full">
+        <nav className={cn("w-24 border-r border-white/5 flex flex-col items-center py-8 gap-8 bg-[#09090B] shadow-2xl relative z-30 shrink-0 h-full", className)}>
             <Link href="/admin">
                 <div className="h-10 px-3 rounded-xl bg-primary border border-white/10 flex items-center justify-center shadow-md hover:opacity-90 transition-all group overflow-hidden">
                     <Image

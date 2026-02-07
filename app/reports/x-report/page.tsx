@@ -88,7 +88,7 @@ export default function XReportPage() {
         try {
             // 1. Fetch current register status to get basic info
             const regRes = await fetch(`${API_URL}/register/current`, {
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
@@ -112,7 +112,7 @@ export default function XReportPage() {
             let sessionId = null
             try {
                 const sessionRes = await fetch(`${API_URL}/pos/session/current`, {
-                    headers: { 
+                    headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
@@ -126,9 +126,9 @@ export default function XReportPage() {
                     // If no session, that's a specific state, not necessarily an error to retry indefinitely?
                     // But if it's a network error, we catch it below.
                     // If it's 404 (no session), we stop.
-                     const sessionErr = await sessionRes.text()
-                     console.error('❌ Session fetch failed:', sessionRes.status, sessionErr)
-                     throw new Error('No active session found. Please open the register first.')
+                    const sessionErr = await sessionRes.text()
+                    console.error('❌ Session fetch failed:', sessionRes.status, sessionErr)
+                    throw new Error('No active session found. Please open the register first.')
                 }
             } catch (e) {
                 // If it's the "No active session" error, rethrow it to stop retries if it's logic error? 
@@ -140,9 +140,9 @@ export default function XReportPage() {
 
             // 3. Fetch the X-Report data from the backend (Source of Truth)
             const reportUrl = `${API_URL}/reports/x-report?session_id=${sessionId}`
-            
+
             const reportRes = await fetch(reportUrl, {
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
@@ -167,7 +167,7 @@ export default function XReportPage() {
                     url: reportUrl,
                     timestamp: new Date().toISOString()
                 })
-                
+
                 let errorMessage = `Failed to fetch report data: ${reportRes.status} ${reportRes.statusText}`
                 if (reportRes.status === 500) {
                     errorMessage = '服务器内部错误，请稍后重试或联系技术支持'
@@ -179,7 +179,7 @@ export default function XReportPage() {
                 } else if (reportRes.status === 403) {
                     errorMessage = '权限不足，无法访问该报告'
                 }
-                
+
                 throw new Error(errorMessage)
             }
 
@@ -194,15 +194,15 @@ export default function XReportPage() {
 
             // 4. Update report state using backend data ONLY
             setReport({
-                totalSales: data.total_transactions,
-                totalRevenue: data.gross_revenue,
-                totalCash: data.cash_sales,
-                totalCard: data.card_sales,
-                totalSplit: 0, // Split is handled via cash_amount/card_amount in backend
-                totalRefunds: data.total_refunds,
-                openingCash: data.opening_cash,
-                expectedDrawer: data.cash_drawer_total,
-                categoryBreakdown: data.category_totals,
+                totalSales: data.total_transactions || 0,
+                totalRevenue: data.gross_revenue || 0,
+                totalCash: data.cash_sales || 0,
+                totalCard: data.card_sales || 0,
+                totalSplit: 0,
+                totalRefunds: data.total_refunds || 0,
+                openingCash: data.opening_cash || 0,
+                expectedDrawer: data.cash_drawer_total || 0,
+                categoryBreakdown: data.category_totals || {},
                 recentSales: data.recent_sales || [],
                 sessionStart: data.opened_at,
                 sessionId: data.session_id || data.register_id
@@ -212,17 +212,17 @@ export default function XReportPage() {
             setLoading(false) // Success - stop loading
         } catch (err: any) {
             console.error('❌ X-Report 数据获取异常:', err)
-            
+
             // Implementation of retry mechanism
             // Don't retry if it's a "No active session" error (logic error, not transient)
             const isLogicError = err.message.includes('No active session');
-            
+
             if (!isLogicError && retryCount < 3) {
                 const nextRetry = retryCount + 1
                 setRetryCount(nextRetry)
                 const delay = Math.pow(2, nextRetry) * 1000 // Exponential backoff
                 console.log(`🔄 Retrying in ${delay}ms... (Attempt ${nextRetry}/3)`)
-                
+
                 // Keep loading state TRUE while waiting
                 setTimeout(() => fetchData(true), delay)
             } else {
@@ -279,9 +279,37 @@ export default function XReportPage() {
 
     return (
         <div className="flex h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden">
-            <CashierSidebar />
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @media print {
+                    @page {
+                        margin: 0;
+                        size: 80mm auto;
+                    }
+                    body * {
+                        visibility: hidden;
+                    }
+                    #printable-area, #printable-area * {
+                        visibility: visible;
+                    }
+                    #printable-area {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 80mm;
+                        padding: 10mm 5mm;
+                        color: black;
+                        background: white;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+            ` }} />
 
-            <main className="flex-1 overflow-y-auto">
+            <CashierSidebar className="no-print" />
+
+            <main className="flex-1 overflow-y-auto no-print">
                 <div className="p-8 max-w-6xl mx-auto space-y-8">
                     {/* Header */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -329,29 +357,29 @@ export default function XReportPage() {
                         <div className="space-y-8">
                             {/* Key Stats */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <StatCard 
-                                    icon={Hash} 
-                                    label="Total Transactions" 
-                                    value={report.totalSales} 
-                                    color="bg-purple-50 text-purple-600" 
+                                <StatCard
+                                    icon={Hash}
+                                    label="Total Transactions"
+                                    value={report.totalSales}
+                                    color="bg-purple-50 text-purple-600"
                                 />
-                                <StatCard 
-                                    icon={DollarSign} 
-                                    label="Gross Revenue" 
-                                    value={`$${report.totalRevenue.toFixed(2)}`} 
-                                    color="bg-blue-50 text-blue-600" 
+                                <StatCard
+                                    icon={DollarSign}
+                                    label="Gross Revenue"
+                                    value={`$${report.totalRevenue.toFixed(2)}`}
+                                    color="bg-blue-50 text-blue-600"
                                 />
-                                <StatCard 
-                                    icon={Banknote} 
-                                    label="Cash Collections" 
-                                    value={`$${report.totalCash.toFixed(2)}`} 
-                                    color="bg-emerald-50 text-emerald-600" 
+                                <StatCard
+                                    icon={Banknote}
+                                    label="Cash Collections"
+                                    value={`$${report.totalCash.toFixed(2)}`}
+                                    color="bg-emerald-50 text-emerald-600"
                                 />
-                                <StatCard 
-                                    icon={CreditCard} 
-                                    label="Card Payments" 
-                                    value={`$${report.totalCard.toFixed(2)}`} 
-                                    color="bg-amber-50 text-amber-600" 
+                                <StatCard
+                                    icon={CreditCard}
+                                    label="Card Payments"
+                                    value={`$${report.totalCard.toFixed(2)}`}
+                                    color="bg-amber-50 text-amber-600"
                                 />
                             </div>
 
@@ -433,8 +461,8 @@ export default function XReportPage() {
                                                                 <td className="px-6 py-4">
                                                                     <span className={cn(
                                                                         "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase",
-                                                                        sale.payment_method === 'cash' ? "bg-emerald-100 text-emerald-700" : 
-                                                                        sale.payment_method === 'card' ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                                                                        sale.payment_method === 'cash' ? "bg-emerald-100 text-emerald-700" :
+                                                                            sale.payment_method === 'card' ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
                                                                     )}>
                                                                         {sale.payment_method}
                                                                     </span>
@@ -466,20 +494,20 @@ export default function XReportPage() {
                                             Object.values(report.categoryBreakdown)
                                                 .sort((a, b) => b.revenue - a.revenue)
                                                 .map((cat, index) => (
-                                                    <div key={`cat-${cat.name}-${index}`} className="space-y-2">
+                                                    <div key={`cat-${cat?.name || index}-${index}`} className="space-y-2">
                                                         <div className="flex justify-between items-end">
-                                                            <span className="text-xs font-bold text-slate-700 uppercase tracking-tight">{cat.name}</span>
-                                                            <span className="text-sm font-black text-slate-900">${cat.revenue.toFixed(2)}</span>
+                                                            <span className="text-xs font-bold text-slate-700 uppercase tracking-tight">{cat?.name || 'Uncategorized'}</span>
+                                                            <span className="text-sm font-black text-slate-900">${(cat?.revenue || 0).toFixed(2)}</span>
                                                         </div>
                                                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                                            <div 
-                                                                className="bg-blue-600 h-full rounded-full" 
-                                                                style={{ width: `${(cat.revenue / (report.totalRevenue || 1)) * 100}%` }}
+                                                            <div
+                                                                className="bg-blue-600 h-full rounded-full"
+                                                                style={{ width: `${((cat?.revenue || 0) / (report.totalRevenue || 1)) * 100}%` }}
                                                             />
                                                         </div>
                                                         <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                                            <span>{cat.quantity} units</span>
-                                                            <span>{((cat.revenue / (report.totalRevenue || 1)) * 100).toFixed(1)}%</span>
+                                                            <span>{cat?.quantity || 0} units</span>
+                                                            <span>{(((cat?.revenue || 0) / (report.totalRevenue || 1)) * 100).toFixed(1)}%</span>
                                                         </div>
                                                     </div>
                                                 ))
@@ -491,6 +519,84 @@ export default function XReportPage() {
                     )}
                 </div>
             </main>
+
+            {/* Hidden Printable Report */}
+            {report && (
+                <div id="printable-area" className="hidden print:block font-mono text-[12px] leading-relaxed">
+                    <div className="text-center mb-6">
+                        <h2 className="text-xl font-bold uppercase tracking-wider">Spirited Wines</h2>
+                        <p className="text-[10px] mt-1">X-REPORT (MID-DAY)</p>
+                        <div className="border-b border-black border-dashed my-4"></div>
+                        <p className="text-left font-bold">SESSION ID: #{report.sessionId}</p>
+                        <p className="text-left">STARTED: {new Date(report.sessionStart).toLocaleString()}</p>
+                        <p className="text-left">PRINTED: {new Date().toLocaleString()}</p>
+                    </div>
+
+                    <div className="border-b border-black border-dashed my-4"></div>
+
+                    <div className="space-y-2">
+                        <div className="flex justify-between font-bold">
+                            <span>TOTAL TRANSACTIONS:</span>
+                            <span>{report.totalSales}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-[14px]">
+                            <span>GROSS REVENUE:</span>
+                            <span>${report.totalRevenue.toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <div className="border-b border-black border-dashed my-4"></div>
+
+                    <div className="space-y-1">
+                        <div className="flex justify-between">
+                            <span>CASH SALES:</span>
+                            <span>${report.totalCash.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>CARD SALES:</span>
+                            <span>${report.totalCard.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>REFUNDS:</span>
+                            <span>-${report.totalRefunds.toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <div className="border-b border-black border-dashed my-4"></div>
+
+                    <div className="space-y-1 bg-gray-50 p-2">
+                        <div className="flex justify-between">
+                            <span>OPENING CASH:</span>
+                            <span>${report.openingCash.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                            <span>EXPECTED DRAWER:</span>
+                            <span>${report.expectedDrawer.toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <div className="border-b border-black border-dashed my-4"></div>
+
+                    <div>
+                        <p className="font-bold underline mb-2">DEPARTMENT BREAKDOWN:</p>
+                        <div className="space-y-1">
+                            {Object.values(report.categoryBreakdown).map((cat, i) => (
+                                <div key={i} className="flex justify-between uppercase">
+                                    <span>{(cat?.name || 'Unknown').substring(0, 15)} ({cat?.quantity || 0}):</span>
+                                    <span>${(cat?.revenue || 0).toFixed(2)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="border-b border-black border-dashed my-6"></div>
+
+                    <div className="text-center italic text-[10px]">
+                        <p>End of X-Report</p>
+                        <p>Thank you for your service.</p>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

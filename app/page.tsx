@@ -53,10 +53,18 @@ const ProductCard = memo(({ product, onAdd, isAlcohol, ageVerified, index }: {
 
             <div className="relative z-10">
                 <div className="flex justify-between items-start mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-purple-50/50 flex items-center justify-center text-primary border border-purple-100">
+                    <div className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center border",
+                        product.isAlcohol ? "bg-red-50 text-red-600 border-red-100" : "bg-purple-50/50 text-primary border-purple-100"
+                    )}>
                         <Wine size={20} />
                     </div>
                     <div className="flex flex-col items-end gap-1">
+                        {product.isAlcohol && (
+                            <span className="text-[7px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded-md uppercase tracking-tighter mb-1 shadow-sm">
+                                🔞 Restricted
+                            </span>
+                        )}
                         <span className={cn(
                             "text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg border",
                             product.stock <= 0 ? "bg-red-500 text-white border-red-600" :
@@ -147,7 +155,7 @@ export default function POSPage() {
     const [checkoutLoading, setCheckoutLoading] = useState(false)
     const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false)
     const [openingFloat, setOpeningFloat] = useState<string>('')
-    const [isOpeningCashSet, setIsOpeningCashSet] = useState(true)
+    const [isOpeningCashSet, setIsOpeningCashSet] = useState(false)
     const [bannerDismissed, setBannerDismissed] = useState(false)
     const [isCardReaderConnected, setIsCardReaderConnected] = useState(false)
     const [cardReaderStatus, setCardReaderStatus] = useState<'idle' | 'waiting' | 'processing' | 'success'>('idle')
@@ -164,6 +172,13 @@ export default function POSPage() {
         if (!token) return
 
         const amount = overrideAmount !== undefined ? overrideAmount : (parseFloat(openingFloat) || 0)
+
+        // If register is already open but we need to set opening cash
+        if (registerId) {
+            await updateOpeningCash(amount)
+            setShowOpenRegisterModal(false)
+            return
+        }
 
         try {
             const res = await fetch(`${apiUrl}/register/open`, {
@@ -405,7 +420,7 @@ export default function POSPage() {
         }
 
         const now = Date.now()
-        const CACHE_TTL = 60 * 60 * 1000
+        const CACHE_TTL = 2 * 60 * 1000 // Reduced to 2 minutes for better synchronization
 
         try {
             setError(null)
@@ -571,7 +586,7 @@ export default function POSPage() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    items: JSON.stringify(cart.map(i => ({ productId: i.productId, quantity: i.quantity }))),
+                    items: JSON.stringify(cart.map(i => ({ productId: i.productId, quantity: i.quantity, manual: i.product.sku === 'MANUAL' }))),
                     notes: holdNotes
                 }),
                 credentials: 'include',
@@ -586,6 +601,80 @@ export default function POSPage() {
             }
         } catch (err) {
             console.error('Hold bill failed', err)
+        }
+    }
+
+    const handleAddManualItem = () => {
+        const price = parseFloat(manualItem.price)
+        if (!manualItem.name || isNaN(price)) return
+
+        // Auto-detect alcohol for age verification
+        const alcoholKeywords = ['wine', 'vodka', 'whiskey', 'rum', 'tequila', 'gin', 'beer', 'cider', 'spirit', 'liquor', 'alcohol', 'shot', 'cocktail']
+        const isAlcoholic = alcoholKeywords.some(keyword =>
+            manualItem.name.toLowerCase().includes(keyword) ||
+            (manualItem.category && manualItem.category.toLowerCase().includes(keyword))
+        )
+
+        const product: Product = {
+            id: Math.floor(Math.random() * -100000), // Negative ID for manual items
+            name: manualItem.name,
+            sku: 'MANUAL',
+            price: price.toString(),
+            stock: 999999,
+            lowStockThreshold: 0,
+            category: { id: 0, name: manualItem.category || 'General' },
+            isAlcohol: isAlcoholic
+        }
+
+        setCart(prev => [...prev, { productId: product.id, product, quantity: 1 }])
+        setManualItem({ name: '', price: '', category: 'General' })
+        setShowManualModal(false)
+    }
+
+    const handleQuickAddProduct = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!apiUrl) return
+        const token = localStorage.getItem('token')
+        if (!token) return
+
+        setIsSavingProduct(true)
+        try {
+            // Auto-detect alcohol for backend
+            const alcoholKeywords = ['wine', 'vodka', 'whiskey', 'rum', 'tequila', 'gin', 'beer', 'cider', 'spirit', 'liquor', 'alcohol']
+            const selectedCategoryName = categories.find(c => c.id.toString() === quickAddProduct.categoryId)?.name || ''
+            const isAlcoholic = alcoholKeywords.some(keyword =>
+                quickAddProduct.name.toLowerCase().includes(keyword) ||
+                selectedCategoryName.toLowerCase().includes(keyword)
+            )
+
+            const res = await fetch(`${apiUrl}/admin/products`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    ...quickAddProduct,
+                    price: parseFloat(quickAddProduct.price),
+                    stock: parseInt(quickAddProduct.stock),
+                    categoryId: quickAddProduct.categoryId || categories[0]?.id,
+                    isAlcohol: isAlcoholic
+                })
+            })
+
+            if (res.ok) {
+                await fetchProducts(true)
+                setShowQuickAddModal(false)
+                setQuickAddProduct({ name: '', sku: '', price: '', stock: '100', categoryId: '' })
+                alert('Product added to database!')
+            } else {
+                const data = await res.json()
+                alert(data.error || 'Failed to add product')
+            }
+        } catch (err) {
+            console.error(err)
+        } finally {
+            setIsSavingProduct(false)
         }
     }
     const resumeHeldBill = (bill: any) => {
@@ -658,7 +747,19 @@ export default function POSPage() {
 
     const handleCompleteOrder = useCallback(async () => {
         if (!registerId) {
-            alert('No open register found. Please open a register first.')
+            setShowOpenRegisterModal(true)
+            return
+        }
+
+        if (!isOpeningCashSet) {
+            setShowOpenRegisterModal(true)
+            return
+        }
+
+        // --- Age Verification Check ---
+        const hasAlcohol = cart.some(item => item.product.isAlcohol)
+        if (hasAlcohol && !ageVerified) {
+            setShowAgeModal(true)
             return
         }
 
@@ -859,7 +960,12 @@ export default function POSPage() {
 
     const deferredSearch = useDeferredValue(debouncedSearch)
 
-    const [visibleCount, setVisibleCount] = useState(40)
+    const [visibleCount, setVisibleCount] = useState(100)
+    const [showManualModal, setShowManualModal] = useState(false)
+    const [manualItem, setManualItem] = useState({ name: '', price: '', category: 'General' })
+    const [isSavingProduct, setIsSavingProduct] = useState(false)
+    const [showQuickAddModal, setShowQuickAddModal] = useState(false)
+    const [quickAddProduct, setQuickAddProduct] = useState({ name: '', sku: '', price: '', stock: '100', categoryId: '' })
 
     const filteredProducts = useMemo(() => {
         const start = performance.now()
@@ -982,10 +1088,8 @@ export default function POSPage() {
         <div className="flex h-screen bg-white text-purple-900 overflow-hidden font-sans">
             <CashierSidebar />
 
-            {/* Main POS Content */}
-            < main className="flex-1 flex flex-col bg-transparent p-6 overflow-hidden" >
-                {/* Top Header */}
-                < div className="flex items-center justify-between mb-6" >
+            <main className="flex-1 flex flex-col bg-transparent p-6 overflow-hidden">
+                <div className="flex items-center justify-between mb-6">
                     <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                             <h2 className="text-3xl font-black text-primary font-outfit tracking-tight uppercase leading-none">Spirited POS</h2>
@@ -999,10 +1103,26 @@ export default function POSPage() {
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <button
+                            onClick={() => setShowManualModal(true)}
+                            className="px-4 py-3 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all flex items-center gap-2"
+                        >
+                            <Plus size={14} />
+                            Manual Item
+                        </button>
+                        {(user?.role?.toUpperCase() === 'OWNER' || user?.role?.toUpperCase() === 'MANAGER') && (
+                            <button
+                                onClick={() => setShowQuickAddModal(true)}
+                                className="px-4 py-3 rounded-2xl bg-purple-50 text-primary border border-purple-100 text-[10px] font-black uppercase tracking-widest hover:bg-purple-100 transition-all flex items-center gap-2"
+                            >
+                                <Plus size={14} />
+                                Quick Add
+                            </button>
+                        )}
                         <button
                             onClick={() => fetchProducts(true)}
-                            className="px-5 py-3 rounded-2xl bg-purple-50 border border-purple-100 text-primary font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-purple-100 transition-all flex items-center gap-2"
+                            className="px-4 py-3 rounded-2xl bg-purple-50 border border-purple-100 text-primary font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-purple-100 transition-all flex items-center gap-2"
                             title="Force sync data from server"
                         >
                             <Power size={16} className={cn(loading && "animate-spin text-primary")} />
@@ -1010,14 +1130,14 @@ export default function POSPage() {
                         </button>
                         <button
                             onClick={() => setShowHeldBillsModal(true)}
-                            className="px-5 py-3 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-amber-100 transition-all flex items-center gap-2"
+                            className="px-4 py-3 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-amber-100 transition-all flex items-center gap-2"
                         >
                             <History size={16} />
-                            Resume Bill ({heldBills.length})
+                            Resume ({heldBills.length})
                         </button>
                         <button
                             onClick={() => setShowCustomerModal(true)}
-                            className="px-5 py-3 rounded-2xl bg-white border border-purple-100 text-primary font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-purple-50 transition-all flex items-center gap-2"
+                            className="px-4 py-3 rounded-2xl bg-white border border-purple-100 text-primary font-black uppercase text-[10px] tracking-widest shadow-sm hover:bg-purple-50 transition-all flex items-center gap-2"
                         >
                             <Plus size={16} />
                             Add Customer
@@ -1036,68 +1156,70 @@ export default function POSPage() {
                             />
                         </div>
                     </div>
-                </div >
+                </div>
 
                 {/* Soft Prompt Banner for Opening Cash */}
                 {/* Always show if not dismissed, to allow updates */}
-                {!bannerDismissed && (
-                    <div className="mb-6 animate-in slide-in-from-top-4 duration-300">
-                        <div className="bg-primary/5 border border-primary/20 rounded-3xl p-4 flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-                                    <Banknote size={20} />
+                {
+                    !bannerDismissed && (
+                        <div className="mb-6 animate-in slide-in-from-top-4 duration-300">
+                            <div className="bg-primary/5 border border-primary/20 rounded-3xl p-4 flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                                        <Banknote size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-black text-primary uppercase tracking-wider">
+                                            {isOpeningCashSet ? 'Opening Cash Set' : 'Opening Cash Not Set'}
+                                        </p>
+                                        <p className="text-[10px] text-purple-600 font-bold uppercase tracking-tight">
+                                            {isOpeningCashSet ? 'Confirmed for this shift. Read-only.' : 'Please enter the cash currently in the drawer for accurate reporting.'}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-xs font-black text-primary uppercase tracking-wider">
-                                        {isOpeningCashSet ? 'Opening Cash Set' : 'Opening Cash Not Set'}
-                                    </p>
-                                    <p className="text-[10px] text-purple-600 font-bold uppercase tracking-tight">
-                                        {isOpeningCashSet ? 'Confirmed for this shift. Read-only.' : 'Please enter the cash currently in the drawer for accurate reporting.'}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-bold text-xs">$</span>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        disabled={isOpeningCashSet}
-                                        placeholder={sessionData?.opening_cash || "0.00"}
-                                        className={cn(
-                                            "bg-white border border-primary/20 rounded-xl pl-8 pr-4 py-2 w-32 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all",
-                                            isOpeningCashSet && "opacity-50 cursor-not-allowed bg-purple-50"
-                                        )}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !isOpeningCashSet) {
-                                                const val = parseFloat((e.target as HTMLInputElement).value)
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-bold text-xs">$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            disabled={isOpeningCashSet}
+                                            placeholder={sessionData?.opening_cash || "0.00"}
+                                            className={cn(
+                                                "bg-white border border-primary/20 rounded-xl pl-8 pr-4 py-2 w-32 text-sm font-bold text-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all",
+                                                isOpeningCashSet && "opacity-50 cursor-not-allowed bg-purple-50"
+                                            )}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !isOpeningCashSet) {
+                                                    const val = parseFloat((e.target as HTMLInputElement).value)
+                                                    if (!isNaN(val)) updateOpeningCash(val)
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    {!isOpeningCashSet && (
+                                        <button
+                                            onClick={() => {
+                                                const bannerInput = document.querySelector('.bg-primary\\/5 input[type="number"]') as HTMLInputElement
+                                                const val = parseFloat(bannerInput?.value || '0')
                                                 if (!isNaN(val)) updateOpeningCash(val)
-                                            }
-                                        }}
-                                    />
-                                </div>
-                                {!isOpeningCashSet && (
+                                            }}
+                                            className="bg-primary text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-opacity-90 transition-all shadow-lg shadow-primary/20"
+                                        >
+                                            Set Cash
+                                        </button>
+                                    )}
                                     <button
-                                        onClick={() => {
-                                            const bannerInput = document.querySelector('.bg-primary\\/5 input[type="number"]') as HTMLInputElement
-                                            const val = parseFloat(bannerInput?.value || '0')
-                                            if (!isNaN(val)) updateOpeningCash(val)
-                                        }}
-                                        className="bg-primary text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-opacity-90 transition-all shadow-lg shadow-primary/20"
+                                        onClick={() => setBannerDismissed(true)}
+                                        className="p-2 text-purple-400 hover:text-purple-600 transition-colors"
                                     >
-                                        Set Cash
+                                        <X size={18} />
                                     </button>
-                                )}
-                                <button
-                                    onClick={() => setBannerDismissed(true)}
-                                    className="p-2 text-purple-400 hover:text-purple-600 transition-colors"
-                                >
-                                    <X size={18} />
-                                </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* Categories / Filters */}
                 < div className="flex gap-3 mb-6 overflow-x-auto pb-2 scrollbar-hide" >
@@ -1216,11 +1338,11 @@ export default function POSPage() {
                             </div>
                         )
                     }
-                </div >
-            </main >
+                </div>
+            </main>
 
             {/* Right Checkout Cart */}
-            < aside className="w-[420px] bg-white border-l border-purple-50 flex flex-col shadow-2xl relative z-20" >
+            <aside className="w-[420px] bg-white border-l border-purple-50 flex flex-col shadow-2xl relative z-20">
                 <div className="p-8 pb-4 space-y-4">
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold font-outfit text-primary flex items-center gap-3 uppercase tracking-tight">
@@ -1589,7 +1711,7 @@ export default function POSPage() {
                         </button>
                     </div>
                 </div>
-            </aside>
+            </aside >
 
             {/* Age Verification Overlay */}
             {
@@ -1834,6 +1956,134 @@ export default function POSPage() {
                     </div>
                 )
             }
+            {/* Manual Item Modal */}
+            {
+                showManualModal && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 backdrop-blur-md bg-black/20">
+                        <div className="glass-card rounded-[40px] p-10 w-full max-w-md relative overflow-hidden border-purple-100 bg-white shadow-2xl">
+                            <h3 className="text-2xl font-black text-dark mb-2 font-outfit tracking-tight uppercase">Manual Operation</h3>
+                            <p className="text-purple-700 mb-8 italic text-sm">Sell an ad-hoc item not found in the manifest.</p>
+
+                            <div className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">Item Description</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Miscellaneous Gift"
+                                        value={manualItem.name}
+                                        onChange={(e) => setManualItem({ ...manualItem, name: e.target.value })}
+                                        className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">Price ($)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        value={manualItem.price}
+                                        onChange={(e) => setManualItem({ ...manualItem, price: e.target.value })}
+                                        className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-4 pt-8">
+                                <button
+                                    onClick={() => setShowManualModal(false)}
+                                    className="flex-1 py-4 rounded-2xl bg-purple-50 text-purple-700 font-bold hover:bg-purple-100 transition-colors uppercase tracking-widest text-xs"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleAddManualItem}
+                                    className="flex-1 py-4 rounded-2xl bg-primary text-white font-black shadow-lg shadow-primary/20 hover:bg-opacity-90 transition-colors uppercase tracking-widest text-xs"
+                                >
+                                    Add to Cart
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Quick Add Product Modal */}
+            {
+                showQuickAddModal && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 backdrop-blur-md bg-black/20">
+                        <div className="glass-card rounded-[40px] p-10 w-full max-w-md relative overflow-hidden border-purple-100 bg-white shadow-2xl">
+                            <h3 className="text-2xl font-black text-dark mb-2 font-outfit tracking-tight uppercase">Registry Entry</h3>
+                            <p className="text-purple-700 mb-8 italic text-sm">Add a permanent product to the system catalog.</p>
+
+                            <form onSubmit={handleQuickAddProduct} className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">Product Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={quickAddProduct.name}
+                                        onChange={(e) => setQuickAddProduct({ ...quickAddProduct, name: e.target.value })}
+                                        className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">SKU / Code</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={quickAddProduct.sku}
+                                            onChange={(e) => setQuickAddProduct({ ...quickAddProduct, sku: e.target.value })}
+                                            className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">Price ($)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            value={quickAddProduct.price}
+                                            onChange={(e) => setQuickAddProduct({ ...quickAddProduct, price: e.target.value })}
+                                            className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-purple-700 uppercase tracking-widest ml-1">Category</label>
+                                    <select
+                                        value={quickAddProduct.categoryId}
+                                        onChange={(e) => setQuickAddProduct({ ...quickAddProduct, categoryId: e.target.value })}
+                                        className="bg-purple-50/50 border border-purple-100 rounded-2xl px-4 py-3 w-full font-semibold outline-none focus:ring-2 focus:ring-primary/10 transition-all text-sm"
+                                    >
+                                        <option value="">Select Category</option>
+                                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="flex gap-4 pt-8">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowQuickAddModal(false)}
+                                        className="flex-1 py-4 rounded-2xl bg-purple-50 text-purple-700 font-bold hover:bg-purple-100 transition-colors uppercase tracking-widest text-xs"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSavingProduct}
+                                        className="flex-1 py-4 rounded-2xl bg-primary text-white font-black shadow-lg shadow-primary/20 hover:bg-opacity-90 transition-colors uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                                    >
+                                        {isSavingProduct ? <Loader2 className="animate-spin" size={16} /> : 'Save Product'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+
             {/* Open Register Modal */}
             {
                 showOpenRegisterModal && (
@@ -1847,8 +2097,12 @@ export default function POSPage() {
                                 </div>
 
                                 <div>
-                                    <h3 className="text-3xl font-black text-dark font-outfit uppercase tracking-tight">Open Register</h3>
-                                    <p className="text-purple-600 text-[10px] font-black uppercase tracking-[0.2em] mt-2">Initialize your shift float</p>
+                                    <h3 className="text-3xl font-black text-dark font-outfit uppercase tracking-tight">
+                                        {registerId ? 'Set Opening Cash' : 'Open Register'}
+                                    </h3>
+                                    <p className="text-purple-600 text-[10px] font-black uppercase tracking-[0.2em] mt-2">
+                                        {registerId ? 'Provide a balance to start selling' : 'Initialize your shift float'}
+                                    </p>
                                 </div>
 
                                 <div className="space-y-2 text-left">
@@ -1872,15 +2126,25 @@ export default function POSPage() {
                                         disabled={openingFloat === '' || parseFloat(openingFloat) < 0}
                                         className="w-full py-5 rounded-[24px] bg-primary text-white font-black shadow-xl shadow-primary/40 hover:bg-opacity-90 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                                     >
-                                        Initialize Terminal
+                                        {registerId ? 'Set Balance & Continue' : 'Initialize Terminal'}
                                         <ArrowRight size={18} />
                                     </button>
-                                    <button
-                                        onClick={() => openRegister(0)}
-                                        className="w-full py-4 rounded-[24px] bg-purple-50 text-purple-600 font-black hover:bg-purple-100 transition-all uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-3"
-                                    >
-                                        Skip & Start Selling
-                                    </button>
+                                    {!registerId && (
+                                        <button
+                                            onClick={() => openRegister(0)}
+                                            className="w-full py-4 rounded-[24px] bg-purple-50 text-purple-600 font-black hover:bg-purple-100 transition-all uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-3"
+                                        >
+                                            Skip & Start Selling
+                                        </button>
+                                    )}
+                                    {registerId && (
+                                        <button
+                                            onClick={() => setShowOpenRegisterModal(false)}
+                                            className="w-full py-4 rounded-[24px] bg-purple-50 text-purple-600 font-black hover:bg-purple-100 transition-all uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-3"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleLogout()}
                                         className="w-full py-2 text-red-400 font-black uppercase text-[9px] tracking-[0.3em] hover:text-red-600 transition-colors"
@@ -1891,8 +2155,7 @@ export default function POSPage() {
                             </div>
                         </div>
                     </div>
-                )
-            }
-        </div >
+                )}
+        </div>
     )
 }

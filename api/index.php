@@ -80,6 +80,24 @@ function json_input(): array {
     return $parsed = [];
 }
 
+function is_alcoholic($name, $pdo, $categoryId = null): bool {
+    $keywords = ['wine', 'vodka', 'whiskey', 'rum', 'tequila', 'gin', 'beer', 'cider', 'spirit', 'liquor', 'alcohol', 'shot', 'cocktail', 'brandy'];
+    $name = strtolower($name);
+    foreach ($keywords as $kw) {
+        if (strpos($name, $kw) !== false) return true;
+    }
+    
+    if ($categoryId) {
+        $stmt = $pdo->prepare('SELECT name FROM categories WHERE id = ?');
+        $stmt->execute([$categoryId]);
+        $catName = strtolower($stmt->fetchColumn() ?: '');
+        foreach ($keywords as $kw) {
+            if (strpos($catName, $kw) !== false) return true;
+        }
+    }
+    return false;
+}
+
 function respond($data, int $code = 200): void {
     http_response_code($code);
     $json = json_encode($data);
@@ -700,16 +718,21 @@ if ($method === 'GET' && $path === '/api/pos/products/search') {
 if ($method === 'POST' && preg_match('#^/api/(admin/)?products/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
+    
+    $name = $data['name'] ?? '';
+    $catId = $data['categoryId'] ?? null;
+    $isAlcohol = !empty($data['isAlcohol']) ? 1 : (is_alcoholic($name, $pdo, $catId) ? 1 : 0);
+
     $stmt = $pdo->prepare('INSERT INTO products (name, sku, barcode, category_id, price, stock, brand, is_alcohol, mrp, bottle_size, low_stock_threshold) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
     $stmt->execute([
-        $data['name'] ?? '',
+        $name,
         $data['sku'] ?? '',
         $data['barcode'] ?? null,
-        $data['categoryId'] ?? null,
+        $catId,
         $data['price'] ?? 0,
         $data['stock'] ?? 0,
         $data['brand'] ?? null,
-        !empty($data['isAlcohol']) ? 1 : 0,
+        $isAlcohol,
         $data['mrp'] ?? null,
         $data['bottleSize'] ?? null,
         (int)($data['lowStockThreshold'] ?? 10),
@@ -721,16 +744,21 @@ if ($method === 'PUT' && preg_match('#^/api/(admin/)?products/(\d+)$#', $path, $
     require_auth(['OWNER', 'MANAGER']);
     $id = (int)$m[2];
     $data = json_input();
+    
+    $name = $data['name'] ?? '';
+    $catId = $data['categoryId'] ?? null;
+    $isAlcohol = !empty($data['isAlcohol']) ? 1 : (is_alcoholic($name, $pdo, $catId) ? 1 : 0);
+
     $stmt = $pdo->prepare('UPDATE products SET name=?, sku=?, barcode=?, category_id=?, price=?, stock=?, brand=?, is_alcohol=?, mrp=?, bottle_size=?, low_stock_threshold=? WHERE id=?');
     $stmt->execute([
-        $data['name'] ?? '',
+        $name,
         $data['sku'] ?? '',
         $data['barcode'] ?? null,
-        $data['categoryId'] ?? null,
+        $catId,
         $data['price'] ?? 0,
         $data['stock'] ?? 0,
         $data['brand'] ?? null,
-        !empty($data['isAlcohol']) ? 1 : 0,
+        $isAlcohol,
         $data['mrp'] ?? null,
         $data['bottleSize'] ?? null,
         (int)($data['lowStockThreshold'] ?? 10),
@@ -1069,7 +1097,7 @@ if ($method === 'POST' && ($path === '/api/sales' || $path === '/api/pos/sales')
     $customerData = $data['customer'] ?? null;
     $loyaltyData = $data['loyalty'] ?? null;
     $discountTotal = (float)($data['discountTotal'] ?? 0);
-    $ageVerification = $data['ageVerification'] ?? null;
+    $ageVerification = $data['ageVerification'] ?? $data['age_verified'] ?? null;
     $receiptData = $data['receipt'] ?? null;
     $promotionRefs = is_array($data['promotions'] ?? null) ? $data['promotions'] : [];
 
@@ -1120,7 +1148,7 @@ if ($method === 'POST' && ($path === '/api/sales' || $path === '/api/pos/sales')
         $total = round(($subtotal + $tax) - $discountTotal, 2);
 
         if ($requiresAgeVerification) {
-            $ageFlag = !empty($data['ageVerified']) || !empty($ageVerification);
+            $ageFlag = !empty($data['ageVerified']) || !empty($data['age_verified']) || !empty($ageVerification);
             if (!$ageFlag) {
                 throw new Exception('Age verification required for alcohol items');
             }
@@ -1247,7 +1275,7 @@ if ($method === 'POST' && ($path === '/api/sales' || $path === '/api/pos/sales')
         }
 
         $receiptNumber = $data['receiptNumber'] ?? ('R' . time());
-        $ageVerified = $requiresAgeVerification ? 1 : (!empty($data['ageVerified']) ? 1 : 0);
+        $ageVerified = $requiresAgeVerification ? 1 : (!empty($data['ageVerified']) || !empty($data['age_verified']) ? 1 : 0);
 
         $stmt = $pdo->prepare('INSERT INTO sales (session_id, register_id, subtotal, tax, total, cash_amount, card_amount, payment_method, age_verified, receipt_number) VALUES (?,?,?,?,?,?,?,?,?,?)');
         $stmt->execute([$sessionId, $registerId, $subtotal, $tax, $total, $cashAmount, $cardAmount, $primaryPaymentMethod, $ageVerified, $receiptNumber]);
@@ -1337,8 +1365,15 @@ if ($method === 'POST' && ($path === '/api/sales' || $path === '/api/pos/sales')
 if ($method === 'GET' && preg_match('#^/api/(admin/)?sales/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $page = max(1, (int)($_GET['page'] ?? 1));
-    $limit = max(1, min(50, (int)($_GET['limit'] ?? 20)));
-    $offset = ($page - 1) * $limit;
+    $limitQuery = $_GET['limit'] ?? '20';
+    if ($limitQuery === 'all') {
+        $limit = 10000; // effective all
+        $offset = 0;
+    } else {
+        $limit = max(1, min(100, (int)$limitQuery));
+        $offset = ($page - 1) * $limit;
+    }
+    $cashierId = isset($_GET['cashier_id']) ? (int)$_GET['cashier_id'] : null;
 
     if ($me['role'] === 'CASHIER') {
         $totalStmt = $pdo->prepare('SELECT COUNT(s.id) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ?');
@@ -1347,6 +1382,16 @@ if ($method === 'GET' && preg_match('#^/api/(admin/)?sales/?$#', $path)) {
 
         $stmt = $pdo->prepare('SELECT s.* FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ? ORDER BY s.id DESC LIMIT ? OFFSET ?');
         $stmt->bindValue(1, $me['id'], PDO::PARAM_INT);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(3, $offset, PDO::PARAM_INT);
+        $stmt->execute();
+    } else if ($cashierId) {
+        $totalStmt = $pdo->prepare('SELECT COUNT(s.id) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ?');
+        $totalStmt->execute([$cashierId]);
+        $total = (int)$totalStmt->fetchColumn();
+
+        $stmt = $pdo->prepare('SELECT s.* FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ? ORDER BY s.id DESC LIMIT ? OFFSET ?');
+        $stmt->bindValue(1, $cashierId, PDO::PARAM_INT);
         $stmt->bindValue(2, $limit, PDO::PARAM_INT);
         $stmt->bindValue(3, $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -1826,13 +1871,36 @@ if ($method === 'POST' && $path === '/api/register/close') {
 // Dashboard stats
 if ($method === 'GET' && preg_match('#^/api/(admin/)?stats/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
+    $cashierId = isset($_GET['cashier_id']) ? (int)$_GET['cashier_id'] : null;
+
     $totalProducts = (int)$pdo->query('SELECT COUNT(*) FROM products')->fetchColumn();
     $totalCategories = (int)$pdo->query('SELECT COUNT(*) FROM categories')->fetchColumn();
-    $totalSales = (int)$pdo->query('SELECT COUNT(*) FROM sales')->fetchColumn();
     $lowStock = (int)$pdo->query('SELECT COUNT(*) FROM products WHERE stock <= low_stock_threshold')->fetchColumn();
-    $todaySales = (int)$pdo->query("SELECT COUNT(*) FROM sales WHERE DATE(created_at)=CURDATE()")->fetchColumn();
-    $totalRevenue = (float)$pdo->query('SELECT COALESCE(SUM(total),0) FROM sales')->fetchColumn();
-    $recent = $pdo->query('SELECT * FROM sales ORDER BY id DESC LIMIT 10')->fetchAll();
+
+    if ($cashierId) {
+        $totalSales = (int)$pdo->prepare('SELECT COUNT(s.id) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ?');
+        $totalSalesStmt = $pdo->prepare('SELECT COUNT(s.id) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ?');
+        $totalSalesStmt->execute([$cashierId]);
+        $totalSales = (int)$totalSalesStmt->fetchColumn();
+
+        $todaySalesStmt = $pdo->prepare('SELECT COUNT(s.id) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ? AND DATE(s.created_at) = CURDATE()');
+        $todaySalesStmt->execute([$cashierId]);
+        $todaySales = (int)$todaySalesStmt->fetchColumn();
+
+        $totalRevenueStmt = $pdo->prepare('SELECT COALESCE(SUM(s.total),0) FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ?');
+        $totalRevenueStmt->execute([$cashierId]);
+        $totalRevenue = (float)$totalRevenueStmt->fetchColumn();
+
+        $recentStmt = $pdo->prepare('SELECT s.* FROM sales s JOIN sessions ss ON s.session_id = ss.id WHERE ss.cashier_id = ? ORDER BY s.id DESC LIMIT 10');
+        $recentStmt->execute([$cashierId]);
+        $recent = $recentStmt->fetchAll();
+    } else {
+        $totalSales = (int)$pdo->query('SELECT COUNT(*) FROM sales')->fetchColumn();
+        $todaySales = (int)$pdo->query("SELECT COUNT(*) FROM sales WHERE DATE(created_at)=CURDATE()")->fetchColumn();
+        $totalRevenue = (float)$pdo->query('SELECT COALESCE(SUM(total),0) FROM sales')->fetchColumn();
+        $recent = $pdo->query('SELECT * FROM sales ORDER BY id DESC LIMIT 10')->fetchAll();
+    }
+
     foreach ($recent as &$r) {
         $items = $pdo->prepare('SELECT si.id, si.quantity, si.price, si.subtotal, p.id AS product_id, p.name, p.sku FROM sale_items si JOIN products p ON si.product_id=p.id WHERE si.sale_id=?');
         $items->execute([$r['id']]);
