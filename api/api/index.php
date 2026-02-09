@@ -718,7 +718,7 @@ if ($method === 'PATCH' && preg_match('#^/api/admin/products/(\d+)/stock$#', $pa
 }
 
 // CSV import/export
-if ($method === 'GET' && $path === '/api/csv/products') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?csv/products/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="products.csv"');
@@ -731,7 +731,7 @@ if ($method === 'GET' && $path === '/api/csv/products') {
     exit;
 }
 
-if ($method === 'POST' && $path === '/api/csv/products') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?csv/products/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     if (!isset($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'])) {
         respond(['error' => 'No file uploaded'], 400);
@@ -891,7 +891,7 @@ if ($method === 'POST' && $path === '/api/csv/products') {
 }
 
 // Register
-if ($method === 'GET' && $path === '/api/register/current') {
+if ($method === 'GET' && preg_match('#^/api/(pos/)?register/current/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $row = $pdo->query('SELECT * FROM registers WHERE status="OPEN" ORDER BY id DESC LIMIT 1')->fetch();
     if (!$row) not_found();
@@ -904,7 +904,7 @@ if ($method === 'GET' && $path === '/api/register/current') {
     ]);
 }
 
-if ($method === 'POST' && $path === '/api/register/open') {
+if ($method === 'POST' && preg_match('#^/api/(pos/)?register/open/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $data = json_input();
     $opening = (float)($data['openingCash'] ?? 0);
@@ -922,7 +922,7 @@ if ($method === 'POST' && $path === '/api/register/open') {
 }
 
 // Sales
-if ($method === 'POST' && $path === '/api/sales') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?sales/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $data = json_input();
     $items = $data['items'] ?? [];
@@ -1198,7 +1198,8 @@ if ($method === 'POST' && $path === '/api/sales') {
     }
 }
 
-if ($method === 'GET' && $path === '/api/admin/sales') {
+// Sales list
+if ($method === 'GET' && preg_match('#^/api/(admin/)?sales/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $page = max(1, (int)($_GET['page'] ?? 1));
     $limit = max(1, min(50, (int)($_GET['limit'] ?? 20)));
@@ -1228,7 +1229,7 @@ if ($method === 'GET' && $path === '/api/admin/sales') {
             'reference' => $p['reference'] ?? null,
         ], $paymentsStmt->fetchAll());
 
-        $custStmt = $pdo->prepare('SELECT cp.id, cp.name, cp.phone, cp.loyalty_points FROM customer_purchases cpr JOIN customer_profiles cp ON cpr.customer_id = cp.id WHERE cpr.sale_id = ? LIMIT 1');
+        $custStmt = $pdo->prepare('SELECT cp.id, cp.name, cp.phone, cp.loyalty_points FROM customer_profiles cpr JOIN customer_profiles cp ON cpr.customer_id = cp.id WHERE cpr.sale_id = ? LIMIT 1');
         $custStmt->execute([$s['id']]);
         $s['customer'] = $custStmt->fetch() ?: null;
 
@@ -1253,7 +1254,7 @@ if ($method === 'GET' && $path === '/api/admin/sales') {
 }
 
 // X report
-if ($method === 'GET' && $path === '/api/reports/x-report') {
+if ($method === 'GET' && preg_match('#^/api/(reports/)?x-report/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $reg = $pdo->query('SELECT * FROM registers WHERE status="OPEN" ORDER BY id DESC LIMIT 1')->fetch();
     if (!$reg) not_found();
@@ -1309,7 +1310,7 @@ if ($method === 'GET' && $path === '/api/reports/x-report') {
 }
 
 // Dashboard stats
-if ($method === 'GET' && $path === '/api/admin/stats') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?stats/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $totalProducts = (int)$pdo->query('SELECT COUNT(*) FROM products')->fetchColumn();
     $totalCategories = (int)$pdo->query('SELECT COUNT(*) FROM categories')->fetchColumn();
@@ -1341,22 +1342,22 @@ if ($method === 'GET' && $path === '/api/admin/stats') {
 }
 
 // Suppliers
-if ($method === 'GET' && $path === '/api/admin/suppliers') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?suppliers/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $rows = $pdo->query('SELECT * FROM suppliers ORDER BY name ASC')->fetchAll();
     respond($rows);
 }
 
-if ($method === 'GET' && preg_match('#^/api/admin/suppliers/(\d+)$#', $path, $m)) {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?suppliers/(\d+)/?$#', $path, $m)) {
     require_auth(['OWNER', 'MANAGER']);
     $stmt = $pdo->prepare('SELECT * FROM suppliers WHERE id = ?');
-    $stmt->execute([(int)$m[1]]);
+    $stmt->execute([(int)$m[2]]);
     $row = $stmt->fetch();
     if (!$row) not_found();
     respond($row);
 }
 
-if ($method === 'POST' && $path === '/api/admin/suppliers') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?suppliers/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
     $name = trim($data['name'] ?? '');
@@ -1375,10 +1376,10 @@ if ($method === 'POST' && $path === '/api/admin/suppliers') {
     respond(['id' => $supplierId]);
 }
 
-if ($method === 'PUT' && preg_match('#^/api/admin/suppliers/(\d+)$#', $path, $m)) {
+if ($method === 'PUT' && preg_match('#^/api/(admin/)?suppliers/(\d+)/?$#', $path, $m)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $stmt = $pdo->prepare('UPDATE suppliers SET name = ?, contact_name = ?, phone = ?, email = ?, address = ?, terms = ? WHERE id = ?');
     $stmt->execute([
         $data['name'] ?? '',
@@ -1393,23 +1394,23 @@ if ($method === 'PUT' && preg_match('#^/api/admin/suppliers/(\d+)$#', $path, $m)
     respond(['ok' => true]);
 }
 
-if ($method === 'DELETE' && preg_match('#^/api/admin/suppliers/(\d+)$#', $path, $m)) {
+if ($method === 'DELETE' && preg_match('#^/api/(admin/)?suppliers/(\d+)/?$#', $path, $m)) {
     require_auth(['OWNER']);
-    $pdo->prepare('DELETE FROM suppliers WHERE id = ?')->execute([(int)$m[1]]);
+    $pdo->prepare('DELETE FROM suppliers WHERE id = ?')->execute([(int)$m[2]]);
     respond(['ok' => true]);
 }
 
 // Purchase orders
-if ($method === 'GET' && $path === '/api/admin/purchase-orders') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?purchase-orders/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $stmt = $pdo->query('SELECT po.*, s.name AS supplier_name, u.name AS created_by_name FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id LEFT JOIN users u ON po.created_by = u.id ORDER BY po.id DESC');
     $rows = $stmt->fetchAll();
     respond($rows);
 }
 
-if ($method === 'GET' && preg_match('#^/api/admin/purchase-orders/(\d+)$#', $path, $m)) {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?purchase-orders/(\d+)/?$#', $path, $m)) {
     require_auth(['OWNER', 'MANAGER']);
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $orderStmt = $pdo->prepare('SELECT po.*, s.name AS supplier_name, u.name AS created_by_name FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id LEFT JOIN users u ON po.created_by = u.id WHERE po.id = ?');
     $orderStmt->execute([$id]);
     $order = $orderStmt->fetch();
@@ -1420,7 +1421,7 @@ if ($method === 'GET' && preg_match('#^/api/admin/purchase-orders/(\d+)$#', $pat
     respond($order);
 }
 
-if ($method === 'POST' && $path === '/api/admin/purchase-orders') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?purchase-orders/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
     $supplierId = (int)($data['supplierId'] ?? 0);
@@ -1455,10 +1456,10 @@ if ($method === 'POST' && $path === '/api/admin/purchase-orders') {
     }
 }
 
-if ($method === 'PUT' && preg_match('#^/api/admin/purchase-orders/(\d+)$#', $path, $m)) {
+if ($method === 'PUT' && preg_match('#^/api/(admin/)?purchase-orders/(\d+)/?$#', $path, $m)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $status = strtoupper($data['status'] ?? 'ORDERED');
     if (!in_array($status, ['DRAFT', 'ORDERED', 'RECEIVED', 'CANCELLED'], true)) {
         respond(['error' => 'Invalid status'], 400);
@@ -1479,9 +1480,9 @@ if ($method === 'PUT' && preg_match('#^/api/admin/purchase-orders/(\d+)$#', $pat
     respond(['ok' => true]);
 }
 
-if ($method === 'POST' && preg_match('#^/api/admin/purchase-orders/(\d+)/receive$#', $path, $m)) {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?purchase-orders/(\d+)/receive/?$#', $path, $m)) {
     $me = require_auth(['OWNER', 'MANAGER']);
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $data = json_input();
     $items = $data['items'] ?? [];
     if (!$items) respond(['error' => 'No items to receive'], 400);
@@ -1533,7 +1534,7 @@ if ($method === 'POST' && preg_match('#^/api/admin/purchase-orders/(\d+)/receive
 }
 
 // Promotions
-if ($method === 'GET' && $path === '/api/promotions') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?promotions/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $activeOnly = isset($_GET['activeOnly']) ? filter_var($_GET['activeOnly'], FILTER_VALIDATE_BOOLEAN) : false;
     $query = 'SELECT pr.*, c.name AS category_name FROM promotions pr LEFT JOIN categories c ON pr.category_id = c.id';
@@ -1542,10 +1543,26 @@ if ($method === 'GET' && $path === '/api/promotions') {
     }
     $query .= ' ORDER BY pr.start_at DESC, pr.id DESC';
     $rows = $pdo->query($query)->fetchAll();
-    respond($rows);
+    
+    $out = array_map(function($r) {
+        return [
+            'id' => (int)$r['id'],
+            'name' => $r['name'],
+            'discountType' => $r['discount_type'],
+            'discountValue' => (float)$r['discount_value'],
+            'startAt' => $r['start_at'],
+            'endAt' => $r['end_at'],
+            'categoryId' => $r['category_id'] ? (int)$r['category_id'] : null,
+            'categoryName' => $r['category_name'] ?? 'All Categories',
+            'active' => (bool)$r['active'],
+            'createdAt' => $r['created_at']
+        ];
+    }, $rows);
+    
+    respond($out);
 }
 
-if ($method === 'POST' && $path === '/api/admin/promotions') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?promotions/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
     $name = trim($data['name'] ?? '');
@@ -1569,10 +1586,10 @@ if ($method === 'POST' && $path === '/api/admin/promotions') {
     respond(['id' => $promoId]);
 }
 
-if ($method === 'PUT' && preg_match('#^/api/admin/promotions/(\d+)$#', $path, $m)) {
+if ($method === 'PUT' && preg_match('#^/api/(admin/)?promotions/(\d+)/?$#', $path, $m)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $type = strtoupper($data['discountType'] ?? 'PERCENT');
     $value = (float)($data['discountValue'] ?? 0);
     if (!in_array($type, ['PERCENT', 'AMOUNT'], true) || $value <= 0) {
@@ -1593,18 +1610,18 @@ if ($method === 'PUT' && preg_match('#^/api/admin/promotions/(\d+)$#', $path, $m
     respond(['ok' => true]);
 }
 
-if ($method === 'PATCH' && preg_match('#^/api/admin/promotions/(\d+)/toggle$#', $path, $m)) {
+if ($method === 'PATCH' && preg_match('#^/api/(admin/)?promotions/(\d+)/toggle/?$#', $path, $m)) {
     $me = require_auth(['OWNER', 'MANAGER']);
-    $id = (int)$m[1];
+    $id = (int)$m[2];
     $stmt = $pdo->prepare('UPDATE promotions SET active = 1 - active WHERE id = ?');
     $stmt->execute([$id]);
     log_action($pdo, (int)$me['id'], 'promotion.toggled', ['promotionId' => $id]);
     respond(['ok' => true]);
 }
 
-if ($method === 'DELETE' && preg_match('#^/api/admin/promotions/(\d+)$#', $path, $m)) {
+if ($method === 'DELETE' && preg_match('#^/api/(admin/)?promotions/(\d+)/?$#', $path, $m)) {
     require_auth(['OWNER']);
-    $pdo->prepare('DELETE FROM promotions WHERE id = ?')->execute([(int)$m[1]]);
+    $pdo->prepare('DELETE FROM promotions WHERE id = ?')->execute([(int)$m[2]]);
     respond(['ok' => true]);
 }
 
@@ -1707,13 +1724,13 @@ if ($method === 'GET' && preg_match('#^/api/sales/(\d+)$#', $path, $m)) {
 }
 
 // Refunds
-if ($method === 'GET' && $path === '/api/admin/refunds') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?refunds/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $rows = $pdo->query('SELECT r.*, s.receipt_number, u.name AS processed_by_name, au.name AS approved_by_name FROM refunds r JOIN sales s ON r.sale_id = s.id JOIN users u ON r.processed_by = u.id LEFT JOIN users au ON r.approved_by = au.id ORDER BY r.id DESC')->fetchAll();
     respond($rows);
 }
 
-if ($method === 'POST' && $path === '/api/admin/refunds') {
+if ($method === 'POST' && preg_match('#^/api/(admin/)?refunds/?$#', $path)) {
     $me = require_auth(['OWNER', 'MANAGER']);
     $data = json_input();
     $saleId = (int)($data['saleId'] ?? 0);
@@ -1794,7 +1811,7 @@ if ($method === 'POST' && $path === '/api/admin/refunds') {
 }
 
 // Audit logs
-if ($method === 'GET' && $path === '/api/admin/audit-logs') {
+if ($method === 'GET' && preg_match('#^/api/(admin/)?audit-logs/?$#', $path)) {
     require_auth(['OWNER']);
     $page = max(1, (int)($_GET['page'] ?? 1));
     $limit = max(1, min(100, (int)($_GET['limit'] ?? 50)));
@@ -1815,7 +1832,7 @@ if ($method === 'GET' && $path === '/api/admin/audit-logs') {
 }
 
 // Hold bill
-if ($method === 'POST' && $path === '/api/pos/bills/hold') {
+if ($method === 'POST' && preg_match('#^/api/pos/bills/hold/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER', 'CASHIER']);
     $data = json_input();
     $items = $data['items'] ?? [];
@@ -1829,98 +1846,6 @@ if ($method === 'POST' && $path === '/api/pos/bills/hold') {
         $stmt->execute([$billId, (int)$it['productId'], (int)$it['quantity']]);
     }
     $pdo->commit();
-    respond(['ok' => true]);
-}
-
-// Promotions
-if ($method === 'GET' && preg_match('#^/api/(admin/)?promotions/?$#', $path)) {
-    require_auth(['OWNER', 'MANAGER', 'CASHIER']);
-    $activeOnly = isset($_GET['activeOnly']) ? filter_var($_GET['activeOnly'], FILTER_VALIDATE_BOOLEAN) : false;
-    $query = 'SELECT pr.*, c.name AS category_name FROM promotions pr LEFT JOIN categories c ON pr.category_id = c.id';
-    if ($activeOnly) {
-        $query .= ' WHERE pr.active = 1 AND (pr.start_at IS NULL OR pr.start_at <= NOW()) AND (pr.end_at IS NULL OR pr.end_at >= NOW())';
-    }
-    $query .= ' ORDER BY pr.start_at DESC, pr.id DESC';
-    $rows = $pdo->query($query)->fetchAll();
-    
-    $out = array_map(function($r) {
-        return [
-            'id' => (int)$r['id'],
-            'name' => $r['name'],
-            'discountType' => $r['discount_type'],
-            'discountValue' => (float)$r['discount_value'],
-            'startAt' => $r['start_at'],
-            'endAt' => $r['end_at'],
-            'categoryId' => $r['category_id'] ? (int)$r['category_id'] : null,
-            'categoryName' => $r['category_name'] ?? 'All Categories',
-            'active' => (bool)$r['active'],
-            'createdAt' => $r['created_at']
-        ];
-    }, $rows);
-    
-    respond($out);
-}
-
-if ($method === 'POST' && preg_match('#^/api/admin/promotions/?$#', $path)) {
-    $me = require_auth(['OWNER', 'MANAGER']);
-    $data = json_input();
-    $name = trim($data['name'] ?? '');
-    $type = strtoupper($data['discountType'] ?? 'PERCENT');
-    $value = (float)($data['discountValue'] ?? 0);
-    if (!$name || !in_array($type, ['PERCENT', 'AMOUNT'], true) || $value <= 0) {
-        respond(['error' => 'Invalid promotion'], 400);
-    }
-    $stmt = $pdo->prepare('INSERT INTO promotions (name, discount_type, discount_value, start_at, end_at, category_id, active) VALUES (?,?,?,?,?,?,?)');
-    $stmt->execute([
-        $name,
-        $type,
-        $value,
-        $data['startAt'] ?? null,
-        $data['endAt'] ?? null,
-        $data['categoryId'] ?? null,
-        !empty($data['active']) ? 1 : 0,
-    ]);
-    $promoId = (int)$pdo->lastInsertId();
-    log_action($pdo, (int)$me['id'], 'promotion.created', ['promotionId' => $promoId]);
-    respond(['id' => $promoId]);
-}
-
-if ($method === 'PUT' && preg_match('#^/api/admin/promotions/(\d+)$#', $path, $m)) {
-    $me = require_auth(['OWNER', 'MANAGER']);
-    $id = (int)$m[1];
-    $data = json_input();
-    $type = strtoupper($data['discountType'] ?? 'PERCENT');
-    $value = (float)($data['discountValue'] ?? 0);
-    if (!in_array($type, ['PERCENT', 'AMOUNT'], true) || $value <= 0) {
-        respond(['error' => 'Invalid promotion data'], 400);
-    }
-    $stmt = $pdo->prepare('UPDATE promotions SET name = ?, discount_type = ?, discount_value = ?, start_at = ?, end_at = ?, category_id = ?, active = ? WHERE id = ?');
-    $stmt->execute([
-        $data['name'] ?? '',
-        $type,
-        $value,
-        $data['startAt'] ?? null,
-        $data['endAt'] ?? null,
-        $data['categoryId'] ?? null,
-        !empty($data['active']) ? 1 : 0,
-        $id,
-    ]);
-    log_action($pdo, (int)$me['id'], 'promotion.updated', ['promotionId' => $id]);
-    respond(['ok' => true]);
-}
-
-if ($method === 'PATCH' && preg_match('#^/api/admin/promotions/(\d+)/toggle$#', $path, $m)) {
-    $me = require_auth(['OWNER', 'MANAGER']);
-    $id = (int)$m[1];
-    $stmt = $pdo->prepare('UPDATE promotions SET active = 1 - active WHERE id = ?');
-    $stmt->execute([$id]);
-    log_action($pdo, (int)$me['id'], 'promotion.toggled', ['promotionId' => $id]);
-    respond(['ok' => true]);
-}
-
-if ($method === 'DELETE' && preg_match('#^/api/admin/promotions/(\d+)$#', $path, $m)) {
-    require_auth(['OWNER']);
-    $pdo->prepare('DELETE FROM promotions WHERE id = ?')->execute([(int)$m[1]]);
     respond(['ok' => true]);
 }
 

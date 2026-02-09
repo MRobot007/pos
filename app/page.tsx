@@ -1210,8 +1210,9 @@ export default function POSPage() {
                                         </button>
                                     )}
                                     <button
+                                        type="button"
                                         onClick={() => setBannerDismissed(true)}
-                                        className="p-2 text-purple-400 hover:text-purple-600 transition-colors"
+                                        className="p-2 text-purple-400 hover:text-purple-600 transition-colors relative z-50"
                                     >
                                         <X size={18} />
                                     </button>
@@ -1380,10 +1381,14 @@ export default function POSPage() {
                                     className="bg-transparent border-none outline-none text-xs font-bold text-primary placeholder:text-purple-600 flex-1"
                                 />
                                 {selectedCustomer && (
-                                    <button onClick={() => {
-                                        setSelectedCustomer(null)
-                                        setPointsToRedeem(0)
-                                    }} className="text-red-400 hover:text-red-600">
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedCustomer(null)
+                                            setPointsToRedeem(0)
+                                        }} 
+                                        className="text-red-400 hover:text-red-600 relative z-50"
+                                    >
                                         <X size={14} />
                                     </button>
                                 )}

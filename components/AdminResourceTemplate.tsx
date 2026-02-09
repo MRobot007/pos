@@ -528,7 +528,11 @@ export function AdminResourceTemplate({
                                 </h3>
                                 <p className="text-purple-800 italic text-sm">Fill in the details for the operational ledger.</p>
                             </div>
-                            <button onClick={() => setShowModal(false)} className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors">
+                            <button 
+                                type="button"
+                                onClick={() => setShowModal(false)} 
+                                className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors relative z-50"
+                            >
                                 <X size={20} />
                             </button>
                         </div>

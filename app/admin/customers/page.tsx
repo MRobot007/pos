@@ -85,8 +85,9 @@ export default function CustomersPage() {
                                 <p className="text-purple-800 italic text-sm font-semibold mt-1">Historical ledger of all terminal settlements for this profile.</p>
                             </div>
                             <button
+                                type="button"
                                 onClick={() => setSelectedCustomer(null)}
-                                className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors"
+                                className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors shadow-sm relative z-50"
                             >
                                 <X size={20} />
                             </button>

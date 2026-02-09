@@ -203,8 +203,9 @@ export default function UserSalesPage() {
                                 </p>
                             </div>
                             <button
+                                type="button"
                                 onClick={() => setShowDetailModal(false)}
-                                className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors shadow-sm"
+                                className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors shadow-sm relative z-50"
                             >
                                 <X size={20} />
                             </button>
