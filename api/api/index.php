@@ -1727,7 +1727,40 @@ if ($method === 'GET' && preg_match('#^/api/sales/(\d+)$#', $path, $m)) {
 if ($method === 'GET' && preg_match('#^/api/(admin/)?refunds/?$#', $path)) {
     require_auth(['OWNER', 'MANAGER']);
     $rows = $pdo->query('SELECT r.*, s.receipt_number, u.name AS processed_by_name, au.name AS approved_by_name FROM refunds r JOIN sales s ON r.sale_id = s.id JOIN users u ON r.processed_by = u.id LEFT JOIN users au ON r.approved_by = au.id ORDER BY r.id DESC')->fetchAll();
+    
+    // Add items for each refund
+    foreach ($rows as &$row) {
+        $itemsStmt = $pdo->prepare(\'
+            SELECT ri.*, si.product_id, p.name as product_name 
+            FROM refund_items ri 
+            JOIN sale_items si ON ri.sale_item_id = si.id 
+            JOIN products p ON si.product_id = p.id 
+            WHERE ri.refund_id = ?
+        \');
+        $itemsStmt->execute([$row[\'id\']]);
+        $row[\'items\'] = $itemsStmt->fetchAll();
+    }
     respond($rows);
+}
+
+if ($method === 'GET' && preg_match('#^/api/(admin/)?refunds/(\d+)/?$#', $path, $m)) {
+    require_auth(['OWNER', 'MANAGER']);
+    $id = (int)$m[2];
+    $stmt = $pdo->prepare(\'SELECT r.*, s.receipt_number, u.name AS processed_by_name, au.name AS approved_by_name FROM refunds r JOIN sales s ON r.sale_id = s.id JOIN users u ON r.processed_by = u.id LEFT JOIN users au ON r.approved_by = au.id WHERE r.id = ?\');
+    $stmt->execute([$id]);
+    $refund = $stmt->fetch();
+    if (!$refund) not_found();
+    
+    $itemsStmt = $pdo->prepare(\'
+        SELECT ri.*, si.product_id, p.name as product_name 
+        FROM refund_items ri 
+        JOIN sale_items si ON ri.sale_item_id = si.id 
+        JOIN products p ON si.product_id = p.id 
+        WHERE ri.refund_id = ?
+    \');
+    $itemsStmt->execute([$id]);
+    $refund[\'items\'] = $itemsStmt->fetchAll();
+    respond($refund);
 }
 
 if ($method === 'POST' && preg_match('#^/api/(admin/)?refunds/?$#', $path)) {
