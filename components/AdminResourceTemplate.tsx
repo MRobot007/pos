@@ -31,12 +31,19 @@ interface Field {
     required?: boolean
 }
 
+interface Column {
+    label: string
+    key: string
+    align?: 'left' | 'center' | 'right'
+    render?: (val: any, item: Resource) => React.ReactNode
+}
+
 interface PageProps {
     title: string
     description: string
     icon: any
     resourceName: string
-    columns: { label: string; key: string; align?: 'left' | 'center' | 'right' }[]
+    columns: Column[]
     apiPath: string
     fields?: Field[]
     renderActions?: (item: Resource) => React.ReactNode
@@ -446,7 +453,9 @@ export function AdminResourceTemplate({
                                                     "px-8 py-6",
                                                     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : ''
                                                 )}>
-                                                    {i === 0 ? (
+                                                    {col.render ? (
+                                                        col.render(val, item)
+                                                    ) : i === 0 ? (
                                                         <div className="flex items-center gap-4">
                                                             <div className="w-10 h-10 rounded-xl bg-purple-50/50 border border-purple-100 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                                                                 <Icon size={18} />
@@ -528,9 +537,9 @@ export function AdminResourceTemplate({
                                 </h3>
                                 <p className="text-purple-800 italic text-sm">Fill in the details for the operational ledger.</p>
                             </div>
-                            <button 
+                            <button
                                 type="button"
-                                onClick={() => setShowModal(false)} 
+                                onClick={() => setShowModal(false)}
                                 className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 hover:text-red-500 transition-colors relative z-50"
                             >
                                 <X size={20} />

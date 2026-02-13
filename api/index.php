@@ -662,6 +662,7 @@ if ($method === 'GET' && preg_match('#^/api/(admin/)?products/?$#', $path)) {
             'stock' => (int)$r['stock'],
             'lowStockThreshold' => (int)($r['low_stock_threshold'] ?? 10),
             'category' => ['id' => (int)$r['cat_id'], 'name' => $r['cat_name'] ?? 'Unassigned'],
+            'categoryId' => (int)$r['cat_id'],
         ];
     }, $rows);
     respond($out);
@@ -720,7 +721,7 @@ if ($method === 'POST' && preg_match('#^/api/(admin/)?products/?$#', $path)) {
     $data = json_input();
     
     $name = $data['name'] ?? '';
-    $catId = $data['categoryId'] ?? null;
+    $catId = $data['categoryId'] ?? $data['category_id'] ?? $data['cat_id'] ?? null;
     $isAlcohol = !empty($data['isAlcohol']) ? 1 : (is_alcoholic($name, $pdo, $catId) ? 1 : 0);
 
     $stmt = $pdo->prepare('INSERT INTO products (name, sku, barcode, category_id, price, stock, brand, is_alcohol, mrp, bottle_size, low_stock_threshold) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
@@ -746,7 +747,7 @@ if ($method === 'PUT' && preg_match('#^/api/(admin/)?products/(\d+)$#', $path, $
     $data = json_input();
     
     $name = $data['name'] ?? '';
-    $catId = $data['categoryId'] ?? null;
+    $catId = $data['categoryId'] ?? $data['category_id'] ?? $data['cat_id'] ?? null;
     $isAlcohol = !empty($data['isAlcohol']) ? 1 : (is_alcoholic($name, $pdo, $catId) ? 1 : 0);
 
     $stmt = $pdo->prepare('UPDATE products SET name=?, sku=?, barcode=?, category_id=?, price=?, stock=?, brand=?, is_alcohol=?, mrp=?, bottle_size=?, low_stock_threshold=? WHERE id=?');
@@ -1947,7 +1948,7 @@ if ($method === 'POST' && preg_match('#^/api/(admin/)?suppliers/?$#', $path)) {
     $stmt = $pdo->prepare('INSERT INTO suppliers (name, contact_name, phone, email, address, terms) VALUES (?,?,?,?,?,?)');
     $stmt->execute([
         $name,
-        $data['contactName'] ?? null,
+        $data['contactName'] ?? $data['contact_name'] ?? null,
         $data['phone'] ?? null,
         $data['email'] ?? null,
         $data['address'] ?? null,
@@ -1965,7 +1966,7 @@ if ($method === 'PUT' && preg_match('#^/api/(admin/)?suppliers/(\d+)/?$#', $path
     $stmt = $pdo->prepare('UPDATE suppliers SET name = ?, contact_name = ?, phone = ?, email = ?, address = ?, terms = ? WHERE id = ?');
     $stmt->execute([
         $data['name'] ?? '',
-        $data['contactName'] ?? null,
+        $data['contactName'] ?? $data['contact_name'] ?? null,
         $data['phone'] ?? null,
         $data['email'] ?? null,
         $data['address'] ?? null,
@@ -2263,7 +2264,7 @@ if ($method === 'POST' && preg_match('#^/api/(admin/)?customers/?$#', $path)) {
     $stmt->execute([
         $name,
         $data['phone'] ?? null,
-        (int)($data['loyaltyPoints'] ?? 0),
+        (int)($data['loyalty_points'] ?? $data['loyaltyPoints'] ?? 0),
     ]);
     $custId = (int)$pdo->lastInsertId();
     log_action($pdo, (int)$me['id'], 'customer.created', ['customerId' => $custId]);
@@ -2278,7 +2279,7 @@ if ($method === 'PUT' && preg_match('#^/api/(admin/)?customers/(\d+)/?$#', $path
     $stmt->execute([
         $data['name'] ?? '',
         $data['phone'] ?? null,
-        (int)($data['loyaltyPoints'] ?? 0),
+        (int)($data['loyalty_points'] ?? $data['loyaltyPoints'] ?? 0),
         $id,
     ]);
     log_action($pdo, (int)$me['id'], 'customer.updated', ['customerId' => $id]);

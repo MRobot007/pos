@@ -53,7 +53,15 @@ export default function CustomersPage() {
                     { label: 'Full Name', key: 'name' },
                     { label: 'Mobile No.', key: 'phone' },
                     { label: 'Loyalty Points', key: 'loyalty_points', align: 'center' },
-                    { label: 'Member Since', key: 'created_at' }
+                    {
+                        label: 'Member Since',
+                        key: 'created_at',
+                        render: (val) => (
+                            <span className="text-xs font-bold text-purple-700 uppercase">
+                                {val ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
+                            </span>
+                        )
+                    }
                 ]}
                 renderActions={(item) => (
                     <button
